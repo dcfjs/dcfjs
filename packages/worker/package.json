@@ -27,7 +27,6 @@
     "url": "https://github.com/dcfjs/dcfjs/issues"
   },
   "dependencies": {
-    "@dcfjs/common": "^0.0.0",
-    "@dcfjs/objpack": "^1.0.1"
+    "@dcfjs/common": "^0.0.0"
   }
 }

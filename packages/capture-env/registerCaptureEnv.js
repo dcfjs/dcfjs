@@ -9,6 +9,14 @@ const DEFAULT_EXTENSIONS = Object.freeze([
   '.mjs',
 ]);
 
-addHook((code) => transformCode(code), {
-  exts: DEFAULT_EXTENSIONS,
-});
+addHook(
+  (code, filename) => {
+    if (/\/node_modules\//.test(filename)) {
+      return code;
+    }
+    return transformCode(code);
+  },
+  {
+    exts: DEFAULT_EXTENSIONS,
+  }
+);

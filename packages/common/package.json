@@ -27,7 +27,7 @@
     "url": "https://github.com/dcfjs/dcfjs/issues"
   },
   "dependencies": {
-    "@dcfjs/objpack": "^1.0.1",
-    "@dcfjs/proto": "^0.0.0"
+    "@dcfjs/proto": "^0.0.0",
+    "@dcfjs/objpack": "^0.0.0"
   }
 }
