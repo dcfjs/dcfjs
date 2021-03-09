@@ -8,7 +8,7 @@ const options = yargs(process.argv.slice(2))
     alias: 'p',
     type: 'string',
     description: 'Bind server port',
-    default: '0',
+    default: '17731',
   })
   .option('host', {
     alias: 'h',
@@ -29,7 +29,8 @@ async function startServer() {
     )
   );
 
-  console.log(`Listening at ${options.host}:${port}`);
+  server.start();
+  console.log(`Master listening at ${options.host}:${port}`);
   Graceful.on('exit', () => {
     console.log('Exiting...');
     return new Promise((resolve, reject) => {

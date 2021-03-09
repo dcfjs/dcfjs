@@ -1,8 +1,14 @@
+import { WorkerExecResponse__Output } from './../../proto/dcf/WorkerExecResponse';
 import { WorkerServiceClient } from '@dcfjs/proto/dcf/WorkerService';
 import { MasterServiceHandlers } from '@dcfjs/proto/dcf/MasterService';
 import { WorkerStatus } from '@dcfjs/proto/dcf/WorkerStatus';
 import * as grpc from '@grpc/grpc-js';
-import { protoDescriptor, encode, SerializedFunction } from '@dcfjs/common';
+import {
+  protoDescriptor,
+  encode,
+  SerializedFunction,
+  decode,
+} from '@dcfjs/common';
 
 const PING_INTERVAL = 60000;
 
@@ -30,20 +36,21 @@ class WorkerClient {
   }
 
   ping = async () => {
-    const result = await new Promise((resolve, reject) =>
-      this.client.exec(
-        {
-          func: encode({
-            __type: 'function',
-            source: 'return "pong";',
-            args: [],
-            values: [],
-          } as SerializedFunction),
-        },
-        (err, result) => (err ? reject(err) : resolve(result))
-      )
+    const result = await new Promise<WorkerExecResponse__Output | undefined>(
+      (resolve, reject) =>
+        this.client.exec(
+          {
+            func: encode({
+              __type: 'function',
+              source: 'function () {return "pong";}',
+              args: [],
+              values: [],
+            } as SerializedFunction),
+          },
+          (err, result) => (err ? reject(err) : resolve(result))
+        )
     );
-    if (result !== 'pong') {
+    if (!result || !result.result || decode(result.result) !== 'pong') {
       throw new Error('Invalid response.');
     }
   };
@@ -69,7 +76,13 @@ export function createMasterServer() {
           };
         }
         const worker = new WorkerClient(request.endpoint);
-        await worker.ping();
+        try {
+          await worker.ping();
+        } catch (e) {
+          worker.close();
+          throw e;
+        }
+        console.log(`Worker ${request.endpoint} registerd.`);
         cb(null);
       } catch (e) {
         cb(e);
@@ -89,9 +102,11 @@ export function createMasterServer() {
         }
         worker.status = WorkerStatus.SHUTDOWN;
         if (worker.currentTask) {
+          console.log(`Worker ${request.endpoint} unregistering.`);
           await worker.currentTask;
         }
         worker.close();
+        console.log(`Worker ${request.endpoint} unregisterd.`);
         cb(null);
       } catch (e) {
         cb(e);

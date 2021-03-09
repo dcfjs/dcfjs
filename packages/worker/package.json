@@ -5,13 +5,14 @@
   "author": "DengYun <dengyun@meideng.net>",
   "homepage": "https://github.com/dcfjs/dcfjs#readme",
   "license": "ISC",
-  "main": "lib/worker.js",
-  "directories": {
-    "lib": "lib",
-    "test": "__tests__"
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "dcf-worker": "./dist/cli.js"
   },
   "files": [
-    "lib"
+    "dist"
   ],
   "publishConfig": {
     "access": "public"
@@ -21,12 +22,20 @@
     "url": "git+https://github.com/dcfjs/dcfjs.git"
   },
   "scripts": {
-    "test": "echo \"Error: run tests from root\" && exit 1"
+    "build": "rollup -c",
+    "watch": "rollup -cw",
+    "prepack": "npm run build"
   },
   "bugs": {
     "url": "https://github.com/dcfjs/dcfjs/issues"
   },
   "dependencies": {
-    "@dcfjs/common": "^0.0.0"
+    "@dcfjs/common": "^0.0.0",
+    "@grpc/grpc-js": "^1.2.10",
+    "@grpc/proto-loader": "0.6.0-pre17",
+    "@types/yargs": "^16.0.0",
+    "node-graceful": "^3.0.1",
+    "rollup-plugin-bin": "^1.0.0",
+    "yargs": "^16.2.0"
   }
 }

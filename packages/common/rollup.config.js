@@ -1,5 +1,4 @@
 import typescript from 'rollup-plugin-typescript2';
-import clear from 'rollup-plugin-clear';
 import banner from 'rollup-plugin-banner';
 import pkg from './package.json';
 
@@ -19,11 +18,5 @@ export default {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.peerDependencies || {}),
   ],
-  plugins: [
-    banner('@noCaptureEnv'),
-    typescript(),
-    clear({
-      targets: ['dist'],
-    }),
-  ],
+  plugins: [banner('@noCaptureEnv'), typescript()],
 };

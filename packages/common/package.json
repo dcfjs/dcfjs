@@ -27,6 +27,8 @@
     "url": "https://github.com/dcfjs/dcfjs/issues"
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.2.10",
+    "@grpc/proto-loader": "0.6.0-pre17",
     "@dcfjs/proto": "^0.0.0",
     "@dcfjs/objpack": "^0.0.0"
   }
