@@ -1,0 +1,44 @@
+syntax="proto3";
+
+package dcf;
+
+enum WorkerStatus {
+  UNKNOWN = 0;
+  READY = 1;
+  ERROR = 2;
+  SHUTDOWN = 3;
+}
+
+message RegisterWorkerRequest {
+  string endpoint = 1;
+}
+
+message RegisterWorkerResponse {
+}
+
+message UnregisterWorkerRequest {
+  string endpoint = 1;
+}
+
+message UnregisterWorkerResponse {
+}
+
+service MasterService {
+  rpc registerWorker(RegisterWorkerRequest) returns(RegisterWorkerResponse);
+
+  rpc unregisterWorker(UnregisterWorkerRequest) returns(UnregisterWorkerResponse);
+}
+
+message WorkerExecRequest {
+  // 使用 msgpack 包装 SerializedFunction
+  bytes func = 1;
+}
+
+message WorkerExecResponse {
+  // 使用 msgpack 包装返回值
+  bytes result = 1;
+}
+
+service WorkerService {
+  rpc exec(WorkerExecRequest) returns(WorkerExecResponse);
+}

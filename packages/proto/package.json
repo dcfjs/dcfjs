@@ -1,0 +1,33 @@
+{
+  "name": "@dcfjs/proto",
+  "version": "0.0.0",
+  "description": "> TODO: description",
+  "author": "DengYun <dengyun@meideng.net>",
+  "homepage": "https://github.com/dcfjs/dcfjs#readme",
+  "license": "ISC",
+  "main": "lib/proto.js",
+  "files": [
+    "proto",
+    "dist",
+    "index.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcfjs/dcfjs.git"
+  },
+  "scripts": {
+    "build": "proto-loader-gen-types index.proto --include-dirs ./proto --out-dir ./ --grpc-lib @grpc/grpc-js --include-comments",
+    "prepublish": "npm run build"
+  },
+  "bugs": {
+    "url": "https://github.com/dcfjs/dcfjs/issues"
+  },
+  "dependencies": {
+    "@dcfjs/objpack": "^1.0.1",
+    "@grpc/grpc-js": "^1.2.10",
+    "@grpc/proto-loader": "0.6.0-pre17"
+  }
+}

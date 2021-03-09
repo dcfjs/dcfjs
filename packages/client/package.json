@@ -1,0 +1,29 @@
+{
+  "name": "@dcfjs/client",
+  "version": "0.0.0",
+  "description": "> TODO: description",
+  "author": "DengYun <dengyun@meideng.net>",
+  "homepage": "https://github.com/dcfjs/dcfjs#readme",
+  "license": "ISC",
+  "main": "lib/client.js",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcfjs/dcfjs.git"
+  },
+  "scripts": {
+    "test": "echo \"Error: run tests from root\" && exit 1"
+  },
+  "bugs": {
+    "url": "https://github.com/dcfjs/dcfjs/issues"
+  },
+  "dependencies": {
+    "@dcfjs/common": "^0.0.0",
+    "@dcfjs/objpack": "^1.0.1"
+  }
+}

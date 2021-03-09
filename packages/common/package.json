@@ -1,0 +1,33 @@
+{
+  "name": "@dcfjs/common",
+  "version": "0.0.0",
+  "description": "> TODO: description",
+  "author": "DengYun <dengyun@meideng.net>",
+  "homepage": "https://github.com/dcfjs/dcfjs#readme",
+  "license": "ISC",
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dcfjs/dcfjs.git"
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -cw",
+    "prepack": "npm run build"
+  },
+  "bugs": {
+    "url": "https://github.com/dcfjs/dcfjs/issues"
+  },
+  "dependencies": {
+    "@dcfjs/objpack": "^1.0.1",
+    "@dcfjs/proto": "^0.0.0"
+  }
+}
