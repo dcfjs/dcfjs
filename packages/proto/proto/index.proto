@@ -23,14 +23,26 @@ message UnregisterWorkerRequest {
 message UnregisterWorkerResponse {
 }
 
+message MasterExecRequest {
+  // 使用 objpack 包装 SerializedFunction，参数为({dispatchWork})，返回任意可序列化结果
+  bytes func = 1;
+}
+
+message MasterExecResponse {
+  // 使用 msgpack 包装返回值
+  bytes result = 1;
+}
+
 service MasterService {
   rpc registerWorker(RegisterWorkerRequest) returns(RegisterWorkerResponse);
 
   rpc unregisterWorker(UnregisterWorkerRequest) returns(UnregisterWorkerResponse);
+
+  rpc exec(MasterExecRequest) returns(MasterExecResponse);
 }
 
 message WorkerExecRequest {
-  // 使用 msgpack 包装 SerializedFunction
+  // 使用 objpack 包装 SerializedFunction，无参数，返回任意可序列化结果
   bytes func = 1;
 }
 

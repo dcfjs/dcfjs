@@ -1,4 +1,4 @@
-import { WorkerStatus } from '@dcfjs/proto/dcf/WorkerStatus';
+import { WorkerExecFunction } from './../../common/src/proto';
 import * as grpc from '@grpc/grpc-js';
 import {
   protoDescriptor,
@@ -18,13 +18,16 @@ export function createWorkerServer() {
         if (!request.func) {
           throw { code: grpc.status.INVALID_ARGUMENT };
         }
-        const func = deserializeFunction(
+        const func = deserializeFunction<WorkerExecFunction>(
           decode(request.func) as SerializedFunction
         );
         const ret = await func();
         cb(null, {
           result: encode(ret),
         });
+        if (global.gc) {
+          global.gc();
+        }
       } catch (e) {
         cb(e);
       }
