@@ -11,7 +11,7 @@ const DEFAULT_EXTENSIONS = Object.freeze([
 
 addHook(
   (code, filename) => {
-    if (/\/node_modules\//.test(filename)) {
+    if (/[/\\]node_modules[/\\]/.test(filename)) {
       return code;
     }
     return transformCode(code);

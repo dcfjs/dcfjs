@@ -1,4 +1,4 @@
-import { WorkerExecFunction } from './../../common/src/proto';
+import { WorkerExecFunction } from '@dcfjs/common/src/proto';
 import * as grpc from '@grpc/grpc-js';
 import {
   protoDescriptor,

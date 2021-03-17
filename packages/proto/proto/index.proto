@@ -31,6 +31,9 @@ message MasterExecRequest {
 message MasterExecResponse {
   // 使用 msgpack 包装返回值
   bytes result = 1;
+
+  // 出错时包含error消息
+  string errorMessage = 2;
 }
 
 service MasterService {
@@ -38,7 +41,7 @@ service MasterService {
 
   rpc unregisterWorker(UnregisterWorkerRequest) returns(UnregisterWorkerResponse);
 
-  rpc exec(MasterExecRequest) returns(MasterExecResponse);
+  rpc exec(MasterExecRequest) returns(stream MasterExecResponse);
 }
 
 message WorkerExecRequest {

@@ -105,19 +105,34 @@ function hookCode(ast) {
       return b.property(
         'init',
         b.identifier(name),
-        b.callExpression(b.identifier('__requireModule'), [b.literal(value)])
+        b.callExpression(
+          b.memberExpression(
+            b.identifier('__dcfc'),
+            b.identifier('requireModule')
+          ),
+          [b.literal(value)]
+        )
       );
     }
 
     return b.property(
       'init',
       b.identifier(name),
-      b.callExpression(b.identifier('__requireModule'), [
-        b.callExpression(
-          b.memberExpression(b.identifier('require'), b.identifier('resolve')),
-          [b.literal(value)]
+      b.callExpression(
+        b.memberExpression(
+          b.identifier('__dcfc'),
+          b.identifier('requireModule')
         ),
-      ])
+        [
+          b.callExpression(
+            b.memberExpression(
+              b.identifier('require'),
+              b.identifier('resolve')
+            ),
+            [b.literal(value)]
+          ),
+        ]
+      )
     );
   }
 
@@ -186,16 +201,23 @@ function hookCode(ast) {
       }
       this.traverse(path);
       const { usedUpValues } = popStack();
+      registerUpValue('__dcfc');
       path.insertAfter(
         b.expressionStatement(
-          b.callExpression(b.identifier('__captureEnv'), [
-            path.value.id,
-            b.objectExpression(
-              Object.keys(usedUpValues).map((v) =>
-                generateEnvProperty(v, usedUpValues[v])
-              )
+          b.callExpression(
+            b.memberExpression(
+              b.identifier('__dcfc'),
+              b.identifier('captureEnv')
             ),
-          ])
+            [
+              path.value.id,
+              b.objectExpression(
+                Object.keys(usedUpValues).map((v) =>
+                  generateEnvProperty(v, usedUpValues[v])
+                )
+              ),
+            ]
+          )
         )
       );
     },
@@ -212,15 +234,22 @@ function hookCode(ast) {
       const { usedUpValues } = popStack();
 
       if (Object.keys(usedUpValues).length > 0) {
+        registerUpValue('__dcfc');
         path.replace(
-          b.callExpression(b.identifier('__captureEnv'), [
-            path.value,
-            b.objectExpression(
-              Object.keys(usedUpValues).map((v) =>
-                generateEnvProperty(v, usedUpValues[v])
-              )
+          b.callExpression(
+            b.memberExpression(
+              b.identifier('__dcfc'),
+              b.identifier('captureEnv')
             ),
-          ])
+            [
+              path.value,
+              b.objectExpression(
+                Object.keys(usedUpValues).map((v) =>
+                  generateEnvProperty(v, usedUpValues[v])
+                )
+              ),
+            ]
+          )
         );
       }
     },
@@ -233,15 +262,22 @@ function hookCode(ast) {
       const { usedUpValues } = popStack();
 
       if (Object.keys(usedUpValues).length > 0) {
+        registerUpValue('__dcfc');
         path.replace(
-          b.callExpression(b.identifier('__captureEnv'), [
-            path.value,
-            b.objectExpression(
-              Object.keys(usedUpValues).map((v) =>
-                generateEnvProperty(v, usedUpValues[v])
-              )
+          b.callExpression(
+            b.memberExpression(
+              b.identifier('__dcfc'),
+              b.identifier('captureEnv')
             ),
-          ])
+            [
+              path.value,
+              b.objectExpression(
+                Object.keys(usedUpValues).map((v) =>
+                  generateEnvProperty(v, usedUpValues[v])
+                )
+              ),
+            ]
+          )
         );
       }
     },
@@ -259,12 +295,15 @@ function transformCode(code, options = {}) {
 
   recast.visit(ast, {
     visitComment(path) {
-      for (const comment of path.node.comments) {
-        if (/@noCaptureEnv/.test(comment.value)) {
-          hasNoCaptureEnv = true;
+      if (path.node.comments) {
+        for (const comment of path.node.comments) {
+          if (/@noCaptureEnv/.test(comment.value)) {
+            hasNoCaptureEnv = true;
+            this.abort();
+          }
         }
       }
-      this.abort();
+      this.traverse(path);
     },
   });
 
@@ -275,16 +314,7 @@ function transformCode(code, options = {}) {
   if (options.es6Modules) {
     ast.program.body.unshift(
       b.importDeclaration(
-        [
-          b.importSpecifier(
-            b.identifier('requireModule'),
-            b.identifier('__requireModule')
-          ),
-          b.importSpecifier(
-            b.identifier('captureEnv'),
-            b.identifier('__captureEnv')
-          ),
-        ],
+        [b.importNamespaceSpecifier(b.identifier('__dcfc'))],
         b.stringLiteral('@dcfjs/common')
       )
     );
@@ -292,16 +322,7 @@ function transformCode(code, options = {}) {
     ast.program.body.unshift(
       b.variableDeclaration('const', [
         b.variableDeclarator(
-          b.objectPattern([
-            b.propertyPattern(
-              b.identifier('requireModule'),
-              b.identifier('__requireModule')
-            ),
-            b.propertyPattern(
-              b.identifier('captureEnv'),
-              b.identifier('__captureEnv')
-            ),
-          ]),
+          b.identifier('__dcfc'),
           b.callExpression(b.identifier('require'), [
             b.stringLiteral('@dcfjs/common'),
           ])

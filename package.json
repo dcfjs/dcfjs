@@ -6,10 +6,16 @@
   ],
   "scripts": {
     "build": "lerna run build --stream",
-    "watch": "lerna run watch --parallel --stream"
+    "watch": "lerna run watch --parallel --stream",
+    "dcf-master": "dcf-master",
+    "dcf-worker": "dcf-worker",
+    "test:run": "mocha --require @dcfjs/capture-env/registerCaptureEnv"
   },
   "devDependencies": {
+    "chai": "^4.3.4",
+    "chai-as-promised": "^7.1.1",
     "lerna": "^4.0.0",
+    "mocha": "^8.3.2",
     "nodemon": "^2.0.7",
     "rollup": "^2.40.0",
     "rollup-plugin-banner": "^0.2.1",

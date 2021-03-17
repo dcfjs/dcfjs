@@ -1,4 +1,4 @@
-import { WorkerExecResponse__Output } from './../../proto/dcf/WorkerExecResponse';
+import { WorkerExecResponse__Output } from '@dcfjs/proto/dcf/WorkerExecResponse';
 import { WorkerServiceClient } from '@dcfjs/proto/dcf/WorkerService';
 import { MasterServiceHandlers } from '@dcfjs/proto/dcf/MasterService';
 import { WorkerStatus } from '@dcfjs/proto/dcf/WorkerStatus';
@@ -39,13 +39,17 @@ class WorkerClient {
       grpc.credentials.createInsecure()
     );
     workers.set(endpoint, this);
-    this._addToIdleList();
   }
 
   close() {
     this.client.close();
     workers.delete(this.endpoint);
     this._removeFromIdleList();
+  }
+
+  initReady() {
+    this.status = WorkerStatus.READY;
+    this._addToIdleList();
   }
 
   ping = async () => {
@@ -101,12 +105,7 @@ class WorkerClient {
       (resolve, reject) =>
         this.client.exec(
           {
-            func: encode({
-              __type: 'function',
-              source: 'function () {return "pong";}',
-              args: [],
-              values: [],
-            } as SerializedFunction),
+            func: encode(func),
           },
           (err, result) => {
             err ? reject(err) : resolve(result);
@@ -176,6 +175,7 @@ export function createMasterServer() {
         const worker = new WorkerClient(request.endpoint);
         try {
           await worker.ping();
+          worker.initReady();
         } catch (e) {
           worker.close();
           throw e;
@@ -210,7 +210,8 @@ export function createMasterServer() {
         cb(e);
       }
     },
-    async exec({ request }, cb) {
+    async exec(call) {
+      const { request } = call;
       try {
         if (!request.func) {
           throw { code: grpc.status.INVALID_ARGUMENT };
@@ -219,15 +220,19 @@ export function createMasterServer() {
           decode(request.func) as SerializedFunction
         );
         const ret = await func({ dispatchWork });
-        cb(null, {
+        call.write({
           result: encode(ret),
         });
+
         if (global.gc) {
           global.gc();
         }
       } catch (e) {
-        cb(e);
+        call.write({
+          errorMessage: e.message,
+        });
       }
+      call.end();
     },
   };
 

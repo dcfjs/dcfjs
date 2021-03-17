@@ -5,7 +5,9 @@
   "author": "DengYun <dengyun@meideng.net>",
   "homepage": "https://github.com/dcfjs/dcfjs#readme",
   "license": "ISC",
-  "main": "lib/client.js",
+  "main": "dist/index.js",
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
@@ -17,12 +19,15 @@
     "url": "git+https://github.com/dcfjs/dcfjs.git"
   },
   "scripts": {
-    "test": "echo \"Error: run tests from root\" && exit 1"
+    "build": "rollup -c",
+    "watch": "rollup -cw",
+    "prepack": "npm run build"
   },
   "bugs": {
     "url": "https://github.com/dcfjs/dcfjs/issues"
   },
   "dependencies": {
-    "@dcfjs/common": "^0.0.0"
+    "@dcfjs/common": "^0.0.0",
+    "@grpc/grpc-js": "^1.2.10"
   }
 }

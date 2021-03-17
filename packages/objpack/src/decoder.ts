@@ -146,7 +146,6 @@ export function buildDecode(
           // maps up to 2^16 elements - 2 bytes
           length = buf.readUInt16BE(offset);
           offset += 2;
-          // console.log(offset - initialOffset)
           return decodeMap(buf, offset, length, 3, options);
 
         case 0xdf:
