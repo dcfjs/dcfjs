@@ -150,4 +150,33 @@ export class RDD<T> {
       )
     );
   }
+
+  mapPartitions<T1>(transformer: (input: T[]) => T1[]): RDD<T1> {
+    return new RDD<T1>(this._context, mapChain(this._chain, transformer));
+  }
+
+  glom(): RDD<T[]> {
+    return this.mapPartitions((v) => [v]);
+  }
+
+  map<T1>(transformer: (input: T) => T1): RDD<T1> {
+    return this.mapPartitions(
+      dcfc.captureEnv((v) => v.map((v) => transformer(v)), { transformer })
+    );
+  }
+
+  flatMap<T1>(transformer: (input: T) => T1[]): RDD<T1> {
+    return this.mapPartitions(
+      dcfc.captureEnv((v) => dcfc.concatArrays(v.map((v) => transformer(v))), {
+        transformer,
+        dcfc: dcfc.requireModule('@dcfjs/common'),
+      })
+    );
+  }
+
+  filter(filterFunc: (input: T) => boolean): RDD<T> {
+    return this.mapPartitions(
+      dcfc.captureEnv((v) => v.filter((v) => filterFunc(v)), { filterFunc })
+    );
+  }
 }
