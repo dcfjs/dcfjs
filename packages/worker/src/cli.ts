@@ -42,7 +42,14 @@ async function register(endpoint: string) {
       (err) => (err ? reject(err) : resolve(undefined))
     );
   });
-  client.close();
+  const channel = client.getChannel();
+  const state = channel.getConnectivityState(false);
+  if (state !== grpc.connectivityState.READY) {
+    throw new Error('Bad connection state');
+  }
+  channel.watchConnectivityState(state, Infinity, () => {
+    Graceful.exit();
+  });
 }
 
 async function unregister(endpoint: string) {
