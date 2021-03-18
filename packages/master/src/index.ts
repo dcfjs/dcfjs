@@ -14,8 +14,6 @@ import {
   MasterExecFunction,
 } from '@dcfjs/common';
 
-const PING_INTERVAL = 60000;
-
 const workers = new Map<string, WorkerClient>();
 
 const idleList: WorkerClient[] = [];
@@ -42,36 +40,36 @@ class WorkerClient {
   }
 
   close() {
+    this.status = WorkerStatus.SHUTDOWN;
     this.client.close();
     workers.delete(this.endpoint);
     this._removeFromIdleList();
   }
 
-  initReady() {
-    this.status = WorkerStatus.READY;
-    this._addToIdleList();
+  async initReady() {
+    try {
+      await new Promise((resolve, reject) =>
+        this.client.waitForReady(Infinity, (err) =>
+          err ? reject(err) : resolve(null)
+        )
+      );
+      const channel = this.client.getChannel();
+      const state = channel.getConnectivityState(false);
+      if (state !== grpc.connectivityState.READY) {
+        throw new Error('Bad connection state');
+      }
+      channel.watchConnectivityState(state, Infinity, () => {
+        console.log(`Worker ${this.endpoint} connection lost.`);
+        this.close();
+      });
+
+      this.status = WorkerStatus.READY;
+      this._addToIdleList();
+    } catch (e) {
+      this.close();
+    }
   }
 
-  ping = async () => {
-    const result = await new Promise<WorkerExecResponse__Output | undefined>(
-      (resolve, reject) =>
-        this.client.exec(
-          {
-            func: encode({
-              __type: 'function',
-              source: 'function () {return "pong";}',
-              args: [],
-              values: [],
-            } as SerializedFunction),
-          },
-          (err, result) => (err ? reject(err) : resolve(result))
-        )
-    );
-    if (!result || !result.result || decode(result.result) !== 'pong') {
-      this._removeFromIdleList();
-      throw new Error('Invalid response.');
-    }
-  };
   private _becomeIdle() {
     if (this.status !== WorkerStatus.READY) {
       return;
@@ -153,14 +151,6 @@ export function dispatchWork<T = any>(
   });
 }
 
-setInterval(() => {
-  for (const worker of workers.values()) {
-    if (worker.status === WorkerStatus.READY && !worker.currentTask) {
-      worker.ping().catch((e) => (worker.status = WorkerStatus.ERROR));
-    }
-  }
-}, PING_INTERVAL);
-
 export function createMasterServer() {
   const server = new grpc.Server();
 
@@ -173,13 +163,7 @@ export function createMasterServer() {
           };
         }
         const worker = new WorkerClient(request.endpoint);
-        try {
-          await worker.ping();
-          worker.initReady();
-        } catch (e) {
-          worker.close();
-          throw e;
-        }
+        await worker.initReady();
         console.log(`Worker ${request.endpoint} registerd.`);
         cb(null);
       } catch (e) {
