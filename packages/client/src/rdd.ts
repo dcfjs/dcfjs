@@ -7,6 +7,7 @@ import {
   mapChain,
   runWorkChain,
 } from './chain';
+import { requireModule } from '@dcfjs/common';
 
 export class RDD<T> {
   protected _context: DCFContext;
@@ -61,7 +62,7 @@ export class RDD<T> {
     );
   }
 
-  async take(limit: number): Promise<T[]> {
+  take(limit: number): Promise<T[]> {
     return this.execute(
       finalizeChain(
         mapChain(
@@ -75,6 +76,77 @@ export class RDD<T> {
           dcfc: dcfc.requireModule('@dcfjs/common'),
         }),
         (t) => `${t}.collect()`
+      )
+    );
+  }
+
+  reduce(reduceFunc: (a: T, b: T) => T): Promise<T | undefined> {
+    return this.execute(
+      finalizeChain(
+        mapChain(
+          this._chain,
+          dcfc.captureEnv(
+            (v) => {
+              if (v.length === 0) {
+                return [];
+              }
+              return [v.reduce(reduceFunc)];
+            },
+            {
+              reduceFunc,
+            }
+          )
+        ),
+        dcfc.captureEnv(
+          (v) => {
+            const a = dcfc.concatArrays(v);
+            if (a.length === 0) {
+              return undefined;
+            }
+            return a.reduce(reduceFunc);
+          },
+          {
+            reduceFunc,
+            dcfc: requireModule('@dcfjs/common'),
+          }
+        ),
+        (t) => `${t}.reduce()`
+      )
+    );
+  }
+
+  max(
+    this: RDD<number>,
+    comparator?: (a: number, b: number) => number
+  ): Promise<T | undefined>;
+  max(comparator: (a: T, b: T) => number): Promise<T | undefined>;
+  max(comparator: any = dcfc.defaultComparator): Promise<T | undefined> {
+    return this.reduce(
+      dcfc.captureEnv(
+        (a, b) => {
+          return comparator(a, b) > 0 ? a : b;
+        },
+        {
+          comparator,
+        }
+      )
+    );
+  }
+
+  min(
+    this: RDD<number>,
+    comparator?: (a: number, b: number) => number
+  ): Promise<T | undefined>;
+  min(comparator: (a: T, b: T) => number): Promise<T | undefined>;
+  min(comparator: any = dcfc.defaultComparator): Promise<T | undefined> {
+    return this.reduce(
+      dcfc.captureEnv(
+        (a, b) => {
+          return comparator(a, b) < 0 ? a : b;
+        },
+        {
+          comparator,
+        }
       )
     );
   }

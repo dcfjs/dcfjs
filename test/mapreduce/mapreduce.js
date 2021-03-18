@@ -44,4 +44,26 @@ describe('MapReduce With local worker', () => {
     const source3 = dcc.emptyRDD();
     expect(await source3.take(30)).deep.equals([]);
   });
+
+  it('Test max', async () => {
+    const source = dcc.range(1000);
+    expect(await source.max()).deep.equals(999);
+
+    const source2 = dcc.emptyRDD();
+    expect(await source2.max()).deep.equals(null);
+
+    const source3 = dcc.range(400).union(dcc.emptyRDD());
+    expect(await source3.max()).deep.equals(399);
+  });
+
+  it('Test min', async () => {
+    const source = dcc.range(120, 1000);
+    expect(await source.min()).deep.equals(120);
+
+    const source2 = dcc.emptyRDD();
+    expect(await source2.min()).deep.equals(null);
+
+    const source3 = dcc.range(120, 400).union(dcc.emptyRDD());
+    expect(await source3.min()).deep.equals(120);
+  });
 });
