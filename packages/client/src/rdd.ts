@@ -64,7 +64,12 @@ export class RDD<T> {
   async take(limit: number): Promise<T[]> {
     return this.execute(
       finalizeChain(
-        this._chain,
+        mapChain(
+          this._chain,
+          dcfc.captureEnv((v) => v.slice(0, limit), {
+            limit,
+          })
+        ),
         dcfc.captureEnv((v) => dcfc.takeArrays(v, limit), {
           limit,
           dcfc: dcfc.requireModule('@dcfjs/common'),

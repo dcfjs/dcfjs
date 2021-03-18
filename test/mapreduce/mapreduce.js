@@ -33,4 +33,15 @@ describe('MapReduce With local worker', () => {
       await dcc.range(10).union(dcc.range(10, 20), dcc.range(20, 30)).collect()
     ).deep.equals(await dcc.range(30).collect());
   });
+
+  it('Test take', async () => {
+    const source = dcc.range(100);
+    expect(await source.take(30)).deep.equals(await dcc.range(30).collect());
+
+    const source2 = dcc.range(10);
+    expect(await source2.take(30)).deep.equals([...Array(10).keys()]);
+
+    const source3 = dcc.emptyRDD();
+    expect(await source3.take(30)).deep.equals([]);
+  });
 });

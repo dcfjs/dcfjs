@@ -153,4 +153,13 @@ export class DCFContext {
       d: dcfc.concatArrays(rdds.map((v) => v._chain.d)),
     });
   }
+
+  emptyRDD(): RDD<never> {
+    return new RDD<never>(this, {
+      n: 0,
+      p: () => () => [],
+      t: 'emptyRDD()',
+      d: [],
+    });
+  }
 }
