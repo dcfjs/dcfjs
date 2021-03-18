@@ -82,11 +82,13 @@ function mapChain<T, T1>(
 
 function finalizeChain<T, T1>(
   chain: RDDWorkChain<T>,
-  finalizer: (v: T[]) => T1
+  finalizer: (v: T[]) => T1,
+  titleMapper?: (t: string) => string
 ): RDDFinalizedWorkChain<T, T1> {
   return {
     ...chain,
     f: finalizer,
+    t: titleMapper ? titleMapper(chain.t) : chain.t,
   };
 }
 
@@ -117,11 +119,24 @@ export class RDD<T> {
     );
   }
 
+  collect(): Promise<T[]> {
+    return this.execute(
+      finalizeChain(
+        this._chain,
+        captureEnv((v) => dcfc.concatArrays(v), {
+          dcfc: dcfc.requireModule('@dcfjs/common'),
+        }),
+        (t) => `${t}.collect()`
+      )
+    );
+  }
+
   count(): Promise<number> {
     return this.execute(
       finalizeChain(
         mapChain(this._chain, (v) => v.length),
-        (v) => v.reduce((a, b) => a + b, 0)
+        (v) => v.reduce((a, b) => a + b, 0),
+        (t) => `${t}.count()`
       )
     );
   }

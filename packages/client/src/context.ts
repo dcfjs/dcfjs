@@ -95,7 +95,7 @@ export class DCFContext {
               }
               const ret = [];
               for (let i = start; i < end; i++) {
-                ret.push(i);
+                ret.push(i * step + from);
               }
               return ret;
             },
@@ -103,16 +103,20 @@ export class DCFContext {
               partitionId,
               eachCount,
               rest,
+              step,
+              from,
             }
           );
         },
         {
           eachCount,
           rest,
+          step,
+          from,
           dcfc: dcfc.requireModule('@dcfjs/common'),
         }
       ),
-      t: `Range(${from},${to})`,
+      t: `range(${from},${to})`,
       d: [],
     });
   }
