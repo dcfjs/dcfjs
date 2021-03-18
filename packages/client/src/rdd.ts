@@ -1,100 +1,16 @@
 import { DCFContext } from './context';
 import * as dcfc from '@dcfjs/common';
 import {
-  captureEnv,
-  FunctionEnv,
-  SerializedFunction,
-  WorkerExecFunction,
-} from '@dcfjs/common';
-
-export type PartitionFunc<T = unknown> = (
-  paritionId: number
-) => () => T | Promise<T>;
-
-export type FinalizedFunc<T, T1> = (v: T[]) => T1 | Promise<T1>;
-
-export interface RDDWorkChain<T = unknown> {
-  // name
-  n: number;
-  // partition worker
-  p: PartitionFunc<T>;
-  // title
-  t: string;
-  // dependencies
-  d: RDDFinalizedWorkChain[];
-}
-
-export interface RDDFinalizedWorkChain<T = unknown, T1 = unknown>
-  extends RDDWorkChain<T> {
-  // finalizer worker
-  f: FinalizedFunc<T, T1>;
-}
-
-async function runWorkChain<T = unknown, T1 = unknown>(
-  dispatchWork: <T = unknown>(
-    func: SerializedFunction | WorkerExecFunction<T>,
-    env?: FunctionEnv
-  ) => Promise<T>,
-  chain: RDDFinalizedWorkChain<T, T1>
-): Promise<T1> {
-  await Promise.all(chain.d.map((d) => runWorkChain(dispatchWork, d)));
-  const temp = [];
-  for (let partitionId = 0; partitionId < chain.n; partitionId++) {
-    temp[partitionId] = dispatchWork(chain.p(partitionId));
-  }
-  return chain.f(await Promise.all(temp));
-}
-
-function mapChain<T, T1>(
-  { n, p, t, d }: RDDWorkChain<T>,
-  mapper: (v: T) => T1,
-  titleMapper?: (t: string) => string
-): RDDWorkChain<T1> {
-  return {
-    n,
-    p: dcfc.captureEnv(
-      (partitionId) => {
-        const pp = p(partitionId);
-        return dcfc.captureEnv(
-          () => {
-            const org = pp();
-            if (org instanceof Promise) {
-              return org.then(mapper);
-            }
-            return mapper(org);
-          },
-          {
-            pp,
-            mapper,
-          }
-        );
-      },
-      {
-        p,
-        mapper,
-        dcfc: dcfc.requireModule('@dcfjs/common'),
-      }
-    ),
-    t: titleMapper ? titleMapper(t) : t,
-    d,
-  };
-}
-
-function finalizeChain<T, T1>(
-  chain: RDDWorkChain<T>,
-  finalizer: (v: T[]) => T1,
-  titleMapper?: (t: string) => string
-): RDDFinalizedWorkChain<T, T1> {
-  return {
-    ...chain,
-    f: finalizer,
-    t: titleMapper ? titleMapper(chain.t) : chain.t,
-  };
-}
+  RDDWorkChain,
+  RDDFinalizedWorkChain,
+  finalizeChain,
+  mapChain,
+  runWorkChain,
+} from './chain';
 
 export class RDD<T> {
   protected _context: DCFContext;
-  protected _chain: RDDWorkChain<T[]>;
+  readonly _chain: RDDWorkChain<T[]>;
   constructor(context: DCFContext, chain: RDDWorkChain<T[]>) {
     this._context = context;
     this._chain = chain;
@@ -119,11 +35,15 @@ export class RDD<T> {
     );
   }
 
+  union(...others: RDD<T>[]): RDD<T> {
+    return this._context.union(this, ...others);
+  }
+
   collect(): Promise<T[]> {
     return this.execute(
       finalizeChain(
         this._chain,
-        captureEnv((v) => dcfc.concatArrays(v), {
+        dcfc.captureEnv((v) => dcfc.concatArrays(v), {
           dcfc: dcfc.requireModule('@dcfjs/common'),
         }),
         (t) => `${t}.collect()`
@@ -137,6 +57,19 @@ export class RDD<T> {
         mapChain(this._chain, (v) => v.length),
         (v) => v.reduce((a, b) => a + b, 0),
         (t) => `${t}.count()`
+      )
+    );
+  }
+
+  async take(limit: number): Promise<T[]> {
+    return this.execute(
+      finalizeChain(
+        this._chain,
+        dcfc.captureEnv((v) => dcfc.takeArrays(v, limit), {
+          limit,
+          dcfc: dcfc.requireModule('@dcfjs/common'),
+        }),
+        (t) => `${t}.collect()`
       )
     );
   }

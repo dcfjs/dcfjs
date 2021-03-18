@@ -9,6 +9,7 @@ import {
 } from '@dcfjs/common';
 import * as dcfc from '@dcfjs/common';
 import { RDD } from './rdd';
+import { PartitionFunc, FinalizedFunc } from './chain';
 
 export interface DCFMapReduceOptions {
   client?: MasterServiceClient;
@@ -118,6 +119,38 @@ export class DCFContext {
       ),
       t: `range(${from},${to})`,
       d: [],
+    });
+  }
+
+  union<T>(...rdds: RDD<T>[]): RDD<T> {
+    const partitionCounts: number[] = [];
+    const rddFuncs: PartitionFunc<T[]>[] = [];
+    for (let i = 0; i < rdds.length; i++) {
+      partitionCounts.push(rdds[i]._chain.n);
+      rddFuncs.push(rdds[i]._chain.p);
+    }
+    const numPartitions = partitionCounts.reduce((a, b) => a + b);
+    return new RDD<T>(this, {
+      n: numPartitions,
+      p: dcfc.captureEnv(
+        (partitionId) => {
+          for (let i = 0; i < partitionCounts.length; i++) {
+            if (partitionId < partitionCounts[i]) {
+              return rddFuncs[i](partitionId);
+            }
+            partitionId -= partitionCounts[i];
+          }
+          // `partitionId` should be less than totalPartitions.
+          // so it should not reach here.
+          throw new Error('Internal error.');
+        },
+        {
+          rddFuncs,
+          partitionCounts,
+        }
+      ),
+      t: `union(${rdds.map((v) => v._chain.t).join(',')})`,
+      d: dcfc.concatArrays(rdds.map((v) => v._chain.d)),
     });
   }
 }

@@ -27,4 +27,10 @@ describe('MapReduce With local worker', () => {
       new Array(25).fill(0).map((v, i) => i * 4)
     );
   });
+
+  it('Test union', async () => {
+    expect(
+      await dcc.range(10).union(dcc.range(10, 20), dcc.range(20, 30)).collect()
+    ).deep.equals(await dcc.range(30).collect());
+  });
 });
