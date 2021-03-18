@@ -1,7 +1,7 @@
 const chai = require('chai');
 const { expect } = chai;
 const chaiAsPromised = require('chai-as-promised');
-const { DCFMapReduceContext } = require('@dcfjs/client');
+const { DCFContext } = require('@dcfjs/client');
 
 chai.use(chaiAsPromised);
 
@@ -20,7 +20,7 @@ function isPrime(v) {
 
 describe('Execute function With local worker', () => {
   it('Prime test', async () => {
-    const client = await new DCFMapReduceContext();
+    const client = await new DCFContext();
 
     const primeCount = await client.executeByPartition(
       100,

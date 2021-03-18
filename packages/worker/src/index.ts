@@ -29,6 +29,7 @@ export function createWorkerServer() {
           global.gc();
         }
       } catch (e) {
+        console.warn(e.stack);
         cb(e);
       }
     },

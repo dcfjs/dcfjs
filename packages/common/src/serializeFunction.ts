@@ -14,6 +14,16 @@ class RequireModule {
   }
 }
 
+function serializeObject(
+  obj: Record<string, unknown>
+): Record<string, unknown> {
+  const ret: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    ret[k] = serializeValue(v);
+  }
+  return ret;
+}
+
 function serializeValue(v: any): any {
   if (typeof v === 'function') {
     return serializeFunction(v);
@@ -34,6 +44,7 @@ function serializeValue(v: any): any {
     if (v.constructor !== Object) {
       throw new Error(`Cannot pass a ${v.constructor.name} object`);
     }
+    v = serializeObject(v);
     if (v.__type) {
       // handle a native object with __type field. This is a rare case.
       return {
@@ -46,38 +57,32 @@ function serializeValue(v: any): any {
   return v;
 }
 
-function deepFreeze(o: any) {
-  Object.freeze(o);
-  for (const propKey in o) {
-    const prop = o[propKey];
-    if (
-      !o.hasOwnProperty(propKey) ||
-      !(typeof prop === 'object') ||
-      Object.isFrozen(prop)
-    ) {
-      continue;
-    }
-    deepFreeze(prop);
+function deserializeObject(
+  obj: Record<string, unknown>
+): Record<string, unknown> {
+  const ret: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    ret[k] = deserializeValue(v);
   }
-  return o;
+  return ret;
 }
 
 function deserializeValue(v: any): any {
   if (v && typeof v === 'object') {
     if (Array.isArray(v)) {
-      return deepFreeze(v.map(deserializeValue));
+      return Object.freeze(v.map(deserializeValue));
     }
     if (v.__type) {
       switch (v.__type) {
         case 'object':
-          return deepFreeze(v.value);
+          return Object.freeze(deserializeObject(v.value));
         case 'function':
           return deserializeFunction(v, true);
         case 'require':
           return require(v.moduleName);
       }
     }
-    return deepFreeze(v);
+    return Object.freeze(deserializeObject(v));
   }
   return v;
 }

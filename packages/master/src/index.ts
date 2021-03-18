@@ -228,6 +228,7 @@ export function createMasterServer() {
           global.gc();
         }
       } catch (e) {
+        console.warn(e.stack);
         call.write({
           errorMessage: e.message,
         });
