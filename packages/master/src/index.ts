@@ -13,6 +13,7 @@ import {
   deserializeFunction,
   MasterExecFunction,
 } from '@dcfjs/common';
+import * as v8 from 'v8';
 
 const workers = new Map<string, WorkerClient>();
 
@@ -103,7 +104,7 @@ class WorkerClient {
       (resolve, reject) =>
         this.client.exec(
           {
-            func: encode(func),
+            func: v8.serialize(func),
           },
           (err, result) => {
             err ? reject(err) : resolve(result);
@@ -118,7 +119,7 @@ class WorkerClient {
       if (!v || !v.result) {
         return (undefined as unknown) as T;
       }
-      return decode(v.result) as T;
+      return v8.deserialize(v.result) as T;
     });
   }
 
@@ -201,11 +202,11 @@ export function createMasterServer() {
           throw { code: grpc.status.INVALID_ARGUMENT };
         }
         const func = deserializeFunction<MasterExecFunction>(
-          decode(request.func) as SerializedFunction
+          v8.deserialize(request.func) as SerializedFunction
         );
         const ret = await func({ dispatchWork });
         call.write({
-          result: encode(ret),
+          result: v8.serialize(ret),
         });
 
         if (global.gc) {

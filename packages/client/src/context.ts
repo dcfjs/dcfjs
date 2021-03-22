@@ -9,7 +9,8 @@ import {
 } from '@dcfjs/common';
 import * as dcfc from '@dcfjs/common';
 import { RDD } from './rdd';
-import { PartitionFunc, FinalizedFunc } from './chain';
+import { PartitionFunc } from './chain';
+import * as v8 from 'v8';
 
 export interface DCFMapReduceOptions {
   client?: MasterServiceClient;
@@ -35,7 +36,7 @@ export class DCFContext {
   execute<T>(f: MasterExecFunction<T>) {
     return new Promise<T>((resolve, reject) => {
       const stream = this.client.exec({
-        func: encode(serializeFunction(f)),
+        func: v8.serialize(serializeFunction(f)),
       });
       stream.on('error', reject);
       stream.on('readable', () => {
@@ -45,7 +46,7 @@ export class DCFContext {
             break;
           }
           if (msg.result) {
-            resolve(decode(msg.result) as T);
+            resolve(v8.deserialize(msg.result) as T);
           } else if (msg.errorMessage) {
             reject(new Error(msg.errorMessage));
           }

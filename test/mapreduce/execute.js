@@ -20,7 +20,7 @@ function isPrime(v) {
 
 describe('Execute function With local worker', () => {
   it('Prime test', async () => {
-    const client = await new DCFContext();
+    const client = new DCFContext();
 
     const primeCount = await client.executeByPartition(
       100,

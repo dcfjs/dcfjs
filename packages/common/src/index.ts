@@ -5,3 +5,4 @@ export * from './tempStorage';
 export * from './proto';
 export * from './objpack';
 export * from './comparator';
+export * from './storage';

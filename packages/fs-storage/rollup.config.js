@@ -19,6 +19,9 @@ export default [
     external: [
       ...Object.keys(pkg.dependencies || {}),
       ...Object.keys(pkg.peerDependencies || {}),
+      'fs',
+      'path',
+      'stream',
       'v8',
     ],
     plugins: [banner('@noCaptureEnv'), typescript()],
@@ -32,6 +35,9 @@ export default [
     external: [
       ...Object.keys(pkg.dependencies || {}),
       ...Object.keys(pkg.peerDependencies || {}),
+      'fs',
+      'path',
+      'stream',
       'v8',
     ],
     plugins: [banner('@noCaptureEnv'), typescript(), bin()],

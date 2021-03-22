@@ -17,6 +17,7 @@ export default {
   external: [
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.peerDependencies || {}),
+    'v8',
   ],
   plugins: [banner('@noCaptureEnv'), typescript()],
 };

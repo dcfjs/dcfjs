@@ -3,15 +3,36 @@ export interface SerializedFunction {
   source: string;
   args: string[];
   values: any[];
+  __deserialized?: Function;
 }
 
 export type FunctionEnv = { [key: string]: any };
+
+export interface CustomSerializedObject {
+  __type: 'factory';
+  getValue: SerializedFunction;
+}
+
+export const symbolSerialize = Symbol('$$serialize');
 
 class RequireModule {
   moduleName: string;
   constructor(moduleName: string) {
     this.moduleName = moduleName;
   }
+}
+
+function cachePair(obj: any, ser: any) {
+  Object.defineProperty(ser, '__deserialized', {
+    value: obj,
+    enumerable: false,
+    configurable: false,
+  });
+  Object.defineProperty(obj, '__serialized', {
+    value: ser,
+    enumerable: false,
+    configurable: false,
+  });
 }
 
 function serializeObject(
@@ -25,6 +46,9 @@ function serializeObject(
 }
 
 function serializeValue(v: any): any {
+  if (v.__serialized) {
+    return v.__serialized;
+  }
   if (typeof v === 'function') {
     return serializeFunction(v);
   }
@@ -36,23 +60,40 @@ function serializeValue(v: any): any {
       };
     }
     if (Array.isArray(v)) {
-      return v.map(serializeValue);
+      const ret = v.map(serializeValue);
+      cachePair(v, ret);
+      return ret;
     }
     if (v instanceof RegExp || v instanceof Buffer) {
       return v;
     }
-    if (v.constructor !== Object) {
-      throw new Error(`Cannot pass a ${v.constructor.name} object`);
+    if (typeof v[symbolSerialize] === 'function') {
+      let f = v[symbolSerialize]();
+      if (typeof f === 'function') {
+        f = serializeFunction(f);
+      }
+      const ret = {
+        __type: 'factory',
+        getValue: f,
+      };
+      cachePair(v, ret);
+      return ret;
     }
-    v = serializeObject(v);
-    if (v.__type) {
+    if (v.constructor !== Object) {
+      throw new Error(
+        `Cannot pass a ${v.constructor.name} object. Try to implement [symbolSerialize]() to give a custom serializer.`
+      );
+    }
+    let ret = serializeObject(v);
+    if (ret.__type) {
       // handle a native object with __type field. This is a rare case.
-      return {
+      ret = {
         __type: 'object',
         value: v,
       };
     }
-    return v;
+    cachePair(v, ret);
+    return ret;
   }
   return v;
 }
@@ -69,20 +110,44 @@ function deserializeObject(
 
 function deserializeValue(v: any): any {
   if (v && typeof v === 'object') {
+    if (v.__deserialized) {
+      return v.__deserialized;
+    }
+
     if (Array.isArray(v)) {
-      return Object.freeze(v.map(deserializeValue));
+      const ret = v.map(deserializeValue);
+      cachePair(ret, v);
+      Object.freeze(ret);
+      return ret;
     }
     if (v.__type) {
       switch (v.__type) {
         case 'object':
-          return Object.freeze(deserializeObject(v.value));
+          const ret = deserializeObject(v.value);
+          cachePair(ret, v);
+          Object.freeze(ret);
+          return ret;
         case 'function':
+          // deserializeFunction has cache check.
           return deserializeFunction(v, true);
         case 'require':
+          // Do not cache require statement(because it has own cache.)
           return require(v.moduleName);
+        case 'factory': {
+          const f = deserializeFunction(v.getValue);
+          const ret = f();
+          cachePair(ret, v);
+          return ret;
+        }
+        default: {
+          throw new Error('Unknown');
+        }
       }
+    } else {
+      const ret = deserializeObject(v);
+      cachePair(ret, v);
+      return ret;
     }
-    return Object.freeze(deserializeObject(v));
   }
   return v;
 }
@@ -104,6 +169,7 @@ export function serializeFunction<T extends (...args: any[]) => any>(
   if (f.__serialized) {
     return f.__serialized;
   }
+
   env = env || f.__env;
   const args: string[] = [];
   const values: any[] = [];
@@ -115,12 +181,14 @@ export function serializeFunction<T extends (...args: any[]) => any>(
     }
   }
 
-  return {
+  const ret = {
     __type: 'function',
     source: f.toString(),
     args,
     values,
   } as SerializedFunction;
+  cachePair(f, ret);
+  return ret;
 }
 
 function wrap<T extends (...args: any[]) => any>(f: T) {
@@ -137,6 +205,9 @@ export function deserializeFunction<T extends (...args: any[]) => any>(
   f: SerializedFunction,
   noWrap?: boolean
 ): T {
+  if (f.__deserialized) {
+    return f.__deserialized as T;
+  }
   let ret;
   const valueMap = f.values.map((v) => deserializeValue(v));
   try {
@@ -156,11 +227,7 @@ export function deserializeFunction<T extends (...args: any[]) => any>(
 return __wrap(${f.source})`
       )(require, wrap, valueMap);
     }
-    Object.defineProperty(ret, '__serialized', {
-      value: f,
-      enumerable: false,
-      configurable: false,
-    });
+    cachePair(ret, f);
     return ret;
   } catch (e) {
     throw new Error(

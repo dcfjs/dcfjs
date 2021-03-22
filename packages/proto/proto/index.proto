@@ -57,3 +57,59 @@ message WorkerExecResponse {
 service WorkerService {
   rpc exec(WorkerExecRequest) returns(WorkerExecResponse);
 }
+
+message CreateSessionRequest {
+  double expireAt = 1;
+}
+
+message CreateSessionResponse {
+  string sessionId = 1;
+}
+
+message RenewSessionRequest {
+  string sessionId = 1;
+
+  double expireAt = 2;
+}
+
+message RenewSessionResponse {
+}
+
+message CloseSessionRequest {
+  string sessionId = 1;
+}
+
+message CloseSessionResponse {
+}
+
+message PutFileRequest {
+  string sessionId = 1;
+
+  string key = 2;
+
+  bytes data = 3;
+}
+
+message PutFileResponse {}
+
+message GetFileRequest {
+  string sessionId = 1;
+
+  string key = 2;
+}
+
+message GetFileResponse {
+  bytes data = 1;
+}
+
+service StorageService {
+  rpc createSession(CreateSessionRequest) returns(CreateSessionResponse);
+
+  rpc renewSession(RenewSessionRequest) returns(RenewSessionResponse);
+
+  rpc closeSession(CloseSessionRequest) returns(CloseSessionResponse);
+
+  rpc putFile(stream PutFileRequest) returns(PutFileResponse);
+
+  rpc getFile(GetFileRequest) returns(stream GetFileResponse);
+}

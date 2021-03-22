@@ -1,5 +1,5 @@
 {
-  "name": "@dcfjs/common",
+  "name": "@dcfjs/fs-storage",
   "version": "0.0.0",
   "description": "> TODO: description",
   "author": "DengYun <dengyun@meideng.net>",
@@ -8,9 +8,15 @@
   "main": "dist/index.js",
   "module": "dist/index.es.js",
   "types": "dist/index.d.ts",
+  "directories": {
+    "dist": "dist"
+  },
   "files": [
     "dist"
   ],
+  "bin": {
+    "dcf-fs-storage": "./dist/cli.js"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -27,9 +33,14 @@
     "url": "https://github.com/dcfjs/dcfjs/issues"
   },
   "dependencies": {
-    "@dcfjs/objpack": "^0.0.0",
-    "@dcfjs/proto": "^0.0.0",
+    "@dcfjs/common": "^0.0.0",
     "@grpc/grpc-js": "^1.2.10",
-    "@grpc/proto-loader": "0.6.0-pre17"
+    "@grpc/proto-loader": "0.6.0-pre17",
+    "@types/uuid": "^8.3.0",
+    "@types/yargs": "^16.0.0",
+    "node-graceful": "^3.0.1",
+    "rollup-plugin-bin": "^1.0.0",
+    "uuid": "^8.3.2",
+    "yargs": "^16.2.0"
   }
 }

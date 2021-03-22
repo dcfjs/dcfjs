@@ -5,9 +5,9 @@ import {
   decode,
   deserializeFunction,
   SerializedFunction,
-  encode,
 } from '@dcfjs/common';
 import { WorkerServiceHandlers } from '@dcfjs/proto/dcf/WorkerService';
+import * as v8 from 'v8';
 
 export function createWorkerServer() {
   const server = new grpc.Server();
@@ -19,11 +19,11 @@ export function createWorkerServer() {
           throw { code: grpc.status.INVALID_ARGUMENT };
         }
         const func = deserializeFunction<WorkerExecFunction>(
-          decode(request.func) as SerializedFunction
+          v8.deserialize(request.func) as SerializedFunction
         );
         const ret = await func();
         cb(null, {
-          result: encode(ret),
+          result: v8.serialize(ret),
         });
         if (global.gc) {
           global.gc();
