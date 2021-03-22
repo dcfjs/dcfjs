@@ -39,10 +39,6 @@ export class StorageClient {
     );
   }
 
-  close() {
-    this.client.close();
-  }
-
   async startSession() {
     const sessionId = await new Promise<string>((resolve, reject) =>
       this.client.createSession(
@@ -107,15 +103,11 @@ export class StorageSession {
     );
   }
 
-  release() {
+  async close() {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
-  }
-
-  async close() {
-    this.release();
     if (this.currentRenew) {
       await this.currentRenew;
     }

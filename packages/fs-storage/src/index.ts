@@ -169,6 +169,7 @@ export class StorageServicer {
   async createSession(expireAt?: number) {
     for (let tryCount = 0; tryCount < 10; ++tryCount) {
       const sessionId = uuidv4();
+
       const dir = path.join(this.baseDir, sessionId);
       if (this.sessions.has(sessionId)) {
         continue;

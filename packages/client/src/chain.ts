@@ -92,7 +92,7 @@ export async function runWorkChain<
     }
   } finally {
     // clean up dependencies after current work.
-    await Promise.all(disposes);
+    await Promise.all(disposes.map((v) => v()));
   }
 }
 
