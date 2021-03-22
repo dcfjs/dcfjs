@@ -33,4 +33,14 @@ describe('Storage Test', () => {
 
     await session.close();
   });
+
+  it('getFile&writeFile Test', async () => {
+    const data = 'Hello, world!';
+    const session = await client.startSession();
+    await session.writeFile('test', data);
+    const result = await session.readFile('test', 'utf-8');
+    expect(result).to.equal(data);
+
+    await session.close();
+  });
 });

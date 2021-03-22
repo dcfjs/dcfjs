@@ -6,7 +6,7 @@ import {
   requireModule,
   symbolSerialize,
 } from './serializeFunction';
-import { Readable, Writable, Transform } from 'stream';
+import { Writable, Transform } from 'stream';
 
 export interface StorageClientOptions {
   endpoint: string;
@@ -37,6 +37,10 @@ export class StorageClient {
         dcfc: requireModule('@dcfjs/common'),
       }
     );
+  }
+
+  close() {
+    this.client.close();
   }
 
   async startSession() {
@@ -132,6 +136,12 @@ export class StorageSession {
   createWriteStream(key: string) {
     let over = false;
     let finalCB: ((err?: Error | null) => void) | null = null;
+    const stream = this.client.client.putFile((err) => {
+      over = true;
+      if (finalCB) {
+        finalCB(err);
+      }
+    });
     const transform = new Transform({
       readableObjectMode: true,
       transform(data, enc, cb) {
@@ -145,20 +155,15 @@ export class StorageSession {
           return;
         }
         finalCB = cb;
+        stream.end();
       },
-    });
-    const stream = this.client.client.putFile((err) => {
-      over = true;
-      if (finalCB) {
-        finalCB(err);
-      }
     });
     stream.write({
       sessionId: this.sessionId,
       key,
     });
 
-    transform.pipe((stream as unknown) as Writable);
+    transform.pipe((stream as unknown) as Writable, { end: false });
     return transform as Writable;
   }
 
@@ -174,5 +179,55 @@ export class StorageSession {
       },
     });
     return stream.pipe(transform);
+  }
+
+  readFile(key: string): Promise<Buffer>;
+  readFile(key: string, encoding: BufferEncoding): Promise<string>;
+  readFile(key: string, encoding?: BufferEncoding): Promise<Buffer | string> {
+    const stream = this.createReadableStream(key);
+    const datas: Buffer[] = [];
+    stream.on('readable', () => {
+      let buf;
+      while ((buf = stream.read())) {
+        datas.push(buf);
+      }
+    });
+    return new Promise<Buffer | string>((resolve, reject) => {
+      stream.on('end', () => {
+        const ret = Buffer.concat(datas);
+        if (encoding) {
+          resolve(ret.toString(encoding));
+          return;
+        }
+        resolve(ret);
+      });
+      stream.on('error', reject);
+    });
+  }
+
+  writeFile(
+    key: string,
+    data: string | Buffer,
+    encoding?: BufferEncoding
+  ): Promise<void> {
+    if (typeof data === 'string') {
+      data = Buffer.from(data, encoding);
+    }
+    return new Promise((resolve, reject) => {
+      const stream = this.client.client.putFile((err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+      stream.write({
+        sessionId: this.sessionId,
+        key,
+        data,
+      });
+      stream.end();
+      stream.on('error', reject);
+    });
   }
 }

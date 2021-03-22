@@ -13,7 +13,7 @@ export interface CustomSerializedObject {
   getValue: SerializedFunction;
 }
 
-export const symbolSerialize = Symbol('$$serialize');
+export const symbolSerialize = Symbol();
 
 class RequireModule {
   moduleName: string;

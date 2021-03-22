@@ -1,8 +1,7 @@
+import { StorageClient } from './../../common/src/storage';
 import * as grpc from '@grpc/grpc-js';
 import { MasterServiceClient } from '@dcfjs/proto/dcf/MasterService';
 import {
-  encode,
-  decode,
   MasterExecFunction,
   protoDescriptor,
   serializeFunction,
@@ -21,6 +20,7 @@ export interface DCFMapReduceOptions {
 export class DCFContext {
   readonly client: MasterServiceClient;
   readonly options: DCFMapReduceOptions;
+  readonly storages: { [key: string]: StorageClient } = {};
   constructor(options: DCFMapReduceOptions = {}) {
     this.options = options;
     if (options.client) {

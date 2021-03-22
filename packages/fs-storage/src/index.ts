@@ -232,6 +232,11 @@ export class StorageServicer {
         });
       }
     );
+    let data;
+
+    while ((data = call.read())) {
+      writable.write(data.data);
+    }
     return new Promise<void>((resolve, reject) => {
       const transformer = new Transform({
         writableObjectMode: true,
@@ -239,6 +244,7 @@ export class StorageServicer {
           cb(null, data.data);
         },
       });
+
       call.pipe(transformer).pipe(writable);
       call.on('end', () => {
         resolve();
