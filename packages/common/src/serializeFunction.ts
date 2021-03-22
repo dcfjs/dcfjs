@@ -46,13 +46,13 @@ function serializeObject(
 }
 
 function serializeValue(v: any): any {
-  if (v.__serialized) {
-    return v.__serialized;
-  }
   if (typeof v === 'function') {
     return serializeFunction(v);
   }
   if (v && typeof v === 'object') {
+    if (v.__serialized) {
+      return v.__serialized;
+    }
     if (v.constructor === RequireModule) {
       return {
         __type: 'require',

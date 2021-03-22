@@ -8,21 +8,26 @@ import {
 } from '@dcfjs/common';
 import * as dcfc from '@dcfjs/common';
 import { RDD } from './rdd';
-import { PartitionFunc } from './chain';
+import { InitializeFunc, PartitionFunc } from './chain';
 import * as v8 from 'v8';
 
 export interface DCFMapReduceOptions {
   client?: MasterServiceClient;
   masterEndpoint?: string;
   defaultPartitions?: number;
+  storage?: StorageClient;
 }
 
 export class DCFContext {
   readonly client: MasterServiceClient;
   readonly options: DCFMapReduceOptions;
-  readonly storages: { [key: string]: StorageClient } = {};
+  readonly storage: StorageClient | null = null;
+
   constructor(options: DCFMapReduceOptions = {}) {
     this.options = options;
+    if (options.storage) {
+      this.storage = options.storage;
+    }
     if (options.client) {
       this.client = options.client;
     } else {
@@ -31,6 +36,13 @@ export class DCFContext {
         grpc.credentials.createInsecure()
       );
     }
+  }
+
+  getStorage() {
+    if (!this.storage) {
+      throw new Error('No storage provided.');
+    }
+    return this.storage;
   }
 
   execute<T>(f: MasterExecFunction<T>) {
@@ -125,21 +137,29 @@ export class DCFContext {
 
   union<T>(...rdds: RDD<T>[]): RDD<T> {
     const partitionCounts: number[] = [];
-    const rddFuncs: PartitionFunc<T[]>[] = [];
+    const rddFuncs: PartitionFunc<T[], void>[] = [];
+    const dependCounts: number[] = [];
+
     for (let i = 0; i < rdds.length; i++) {
       partitionCounts.push(rdds[i]._chain.n);
       rddFuncs.push(rdds[i]._chain.p);
+      dependCounts.push(rdds[i]._chain.d.length);
     }
     const numPartitions = partitionCounts.reduce((a, b) => a + b);
     return new RDD<T>(this, {
       n: numPartitions,
       p: dcfc.captureEnv(
-        (partitionId) => {
+        (partitionId, dependValues) => {
+          let dependStart = 0;
           for (let i = 0; i < partitionCounts.length; i++) {
             if (partitionId < partitionCounts[i]) {
-              return rddFuncs[i](partitionId);
+              return rddFuncs[i](
+                partitionId,
+                dependValues.slice(dependStart, dependStart + dependCounts[i])
+              );
             }
             partitionId -= partitionCounts[i];
+            dependStart += dependCounts[i];
           }
           // `partitionId` should be less than totalPartitions.
           // so it should not reach here.
@@ -148,6 +168,7 @@ export class DCFContext {
         {
           rddFuncs,
           partitionCounts,
+          dependCounts,
         }
       ),
       t: `union(${rdds.map((v) => v._chain.t).join(',')})`,

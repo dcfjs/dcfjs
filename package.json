@@ -9,6 +9,7 @@
     "watch": "lerna run watch --parallel --stream",
     "dcf-master": "dcf-master",
     "dcf-worker": "dcf-worker",
+    "dcf-fs-storage": "dcf-fs-storage",
     "test:run": "mocha --require @dcfjs/capture-env/registerCaptureEnv"
   },
   "devDependencies": {

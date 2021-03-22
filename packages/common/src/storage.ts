@@ -45,13 +45,18 @@ export class StorageClient {
 
   async startSession() {
     const sessionId = await new Promise<string>((resolve, reject) =>
-      this.client.createSession({}, (err, result) => {
-        if (err || !result?.sessionId) {
-          reject(err);
-          return;
+      this.client.createSession(
+        {
+          expireAt: Date.now() + this.options.timeout,
+        },
+        (err, result) => {
+          if (err || !result?.sessionId) {
+            reject(err);
+            return;
+          }
+          resolve(result.sessionId);
         }
-        resolve(result.sessionId);
-      })
+      )
     );
     return new StorageSession(this, sessionId);
   }
@@ -69,15 +74,21 @@ export class StorageClient {
 export class StorageSession {
   client: StorageClient;
   sessionId: string;
-  timer: NodeJS.Timer;
+  timer: NodeJS.Timer | null = null;
   currentRenew: Promise<void> | null = null;
 
-  constructor(client: StorageClient, sessionId: string) {
+  constructor(
+    client: StorageClient,
+    sessionId: string,
+    autoRenew: boolean = true
+  ) {
     this.client = client;
     this.sessionId = sessionId;
-    this.timer = setInterval(() => {
-      this.renew();
-    }, client.options.renewInterval);
+    if (autoRenew) {
+      this.timer = setInterval(() => {
+        this.renew();
+      }, client.options.renewInterval);
+    }
   }
 
   [symbolSerialize]() {
@@ -85,7 +96,8 @@ export class StorageSession {
     const dcfc = require('@dcfjs/common');
     return captureEnv(
       () => {
-        return new dcfc.StorageSession(client, sessionId);
+        // Do not renew deserialized session because they may be not properly released.
+        return new dcfc.StorageSession(client, sessionId, false);
       },
       {
         client,
@@ -95,8 +107,15 @@ export class StorageSession {
     );
   }
 
+  release() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
   async close() {
-    clearInterval(this.timer);
+    this.release();
     if (this.currentRenew) {
       await this.currentRenew;
     }
@@ -121,6 +140,7 @@ export class StorageSession {
       this.client.client.renewSession(
         {
           sessionId: this.sessionId,
+          expireAt: Date.now() + this.client.options.timeout,
         },
         (err) => {
           err ? reject(err) : resolve();
@@ -129,7 +149,6 @@ export class StorageSession {
     });
     return this.currentRenew.then(() => {
       this.currentRenew = null;
-      console.log('Here', this.currentRenew);
     });
   }
 
@@ -205,6 +224,12 @@ export class StorageSession {
     });
   }
 
+  writeFile(key: string, data: Buffer): Promise<void>;
+  writeFile(
+    key: string,
+    data: string,
+    encoding?: BufferEncoding
+  ): Promise<void>;
   writeFile(
     key: string,
     data: string | Buffer,
