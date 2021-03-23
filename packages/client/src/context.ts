@@ -85,7 +85,7 @@ export class DCFContext {
       from = 0;
     }
     numPartitions = numPartitions || this.options.defaultPartitions;
-    if (!numPartitions || numPartitions < 0) {
+    if (!numPartitions || numPartitions <= 0) {
       throw new Error('Must specify partitions count.');
     }
 

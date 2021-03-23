@@ -487,7 +487,7 @@ export class RDD<T> {
 
   distinct(numPartitions?: number): RDD<T> {
     numPartitions = numPartitions || this._context.options.defaultPartitions;
-    if (!numPartitions || numPartitions < 0) {
+    if (!numPartitions || numPartitions <= 0) {
       throw new Error('Must specify partitions count.');
     }
 
@@ -512,6 +512,96 @@ export class RDD<T> {
     return this.mapPartitions(partitionMapper)
       .partitionBy(numPartitions, hashPartitionFunc<T>(numPartitions))
       .mapPartitions(partitionMapper);
+  }
+
+  combineByKey<K, V, C>(
+    this: RDD<[K, V]>,
+    createCombiner: (a: V) => C,
+    mergeValue: (a: C, b: V) => C,
+    mergeCombiners: (a: C, b: C) => C,
+    numPartitions?: number,
+    partitionFunc?: (v: K) => number
+  ): RDD<[K, C]> {
+    numPartitions = numPartitions || this._context.options.defaultPartitions;
+    if (!numPartitions || numPartitions <= 0) {
+      throw new Error('Must specify partitions count.');
+    }
+    let pFunc = partitionFunc || hashPartitionFunc<K>(numPartitions);
+
+    const mapFunction1 = dcfc.captureEnv(
+      (datas: [K, V][]) => {
+        const ret = [];
+        const map: { [key: string]: [K, C] } = {};
+        for (const item of datas) {
+          const k = dcfc.encode(item[0]).toString('base64');
+          let r = map[k];
+          if (!r) {
+            r = [item[0], createCombiner(item[1])];
+            map[k] = r;
+            ret.push(r);
+          } else {
+            r[1] = mergeValue(r[1], item[1]);
+          }
+        }
+        return ret;
+      },
+      {
+        createCombiner,
+        mergeValue,
+        dcfc: dcfc.requireModule('@dcfjs/common'),
+      }
+    );
+
+    const mapFunction2 = dcfc.captureEnv(
+      (datas: [K, C][]) => {
+        const ret = [];
+        const map: { [key: string]: [K, C] } = {};
+        for (const item of datas) {
+          const k = dcfc.encode(item[0]).toString('base64');
+          let r = map[k];
+          if (!r) {
+            r = [item[0], item[1]];
+            map[k] = r;
+            ret.push(r);
+          } else {
+            r[1] = mergeCombiners(r[1], item[1]);
+          }
+        }
+        return ret;
+      },
+      {
+        mergeCombiners,
+        dcfc: dcfc.requireModule('@dcfjs/common'),
+      }
+    );
+
+    const realPartitionFunc = dcfc.captureEnv(
+      (data: [K, C]) => {
+        return pFunc(data[0]);
+      },
+      {
+        pFunc,
+      }
+    );
+
+    return this.mapPartitions<[K, C]>(mapFunction1)
+      .partitionBy(numPartitions, realPartitionFunc)
+      .mapPartitions<[K, C]>(mapFunction2);
+  }
+
+  reduceByKey<K, V>(
+    this: RDD<[K, V]>,
+    func: (a: V, B: V) => V,
+    numPartitions?: number,
+    partitionFunc?: (v: K) => number
+  ): RDD<[K, V]> {
+    return this.combineByKey(
+      (x) => x,
+      func,
+      func,
+      numPartitions,
+      partitionFunc
+    );
   }
 }
 

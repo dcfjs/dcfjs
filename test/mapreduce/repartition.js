@@ -6,6 +6,31 @@ const { StorageClient } = require('@dcfjs/common');
 
 chai.use(chaiAsPromised);
 
+function toSet(v) {
+  return [v];
+}
+
+function addToSet(v1, v2) {
+  return [...new Set(v1).add(v2)];
+}
+
+function mergeSet(v1, v2) {
+  return [...new Set([...v1, ...v2])];
+}
+
+function toArray(v) {
+  return [v];
+}
+
+function addToArray(x, v) {
+  x.push(v);
+  return x;
+}
+
+function concatArray(x1, x2) {
+  return x1.concat(x2);
+}
+
 describe('MapReduce With local worker', () => {
   const storage = new StorageClient({
     endpoint: 'localhost:17741',
@@ -18,7 +43,7 @@ describe('MapReduce With local worker', () => {
   });
 
   it('Test repartitionBy', async () => {
-    const max = 100000;
+    const max = 10000;
     const tmp = dcc.range(0, max).partitionBy(3, (v) => v % 3);
 
     expect(await tmp.count()).equals(max);
@@ -75,5 +100,68 @@ describe('MapReduce With local worker', () => {
     const res = await tmp5.collect();
 
     expect(res.sort()).deep.equals([4, 8]);
+  });
+
+  it('Test combineByKey', async function () {
+    const max = 1000;
+    const tmp = dcc
+      .range(0, max)
+      .map((v) => {
+        const key = v % 4;
+        return [key, v];
+      })
+      .combineByKey(toArray, addToArray, concatArray)
+      .map((v) => [v[0], v[1].sort((a, b) => (a | 0) - (b | 0))]);
+
+    const res = (await tmp.collect()).sort((a, b) => a[0] - b[0]);
+
+    const tester = new Array(4);
+    for (let i = 0; i < 4; i++) {
+      tester[i] = [i, []];
+    }
+    for (let i = 0; i < max; i++) {
+      const key = i % 4;
+      tester[key][1].push(i);
+    }
+
+    expect(res).deep.equals(tester);
+
+    const tmp2 = dcc
+      .range(0, max)
+      .map((v) => {
+        const key = v % 4;
+        return [key, v];
+      })
+      .combineByKey(toSet, addToSet, mergeSet);
+    const res2 = (await tmp2.collect()).sort((a, b) => a[0] - b[0]);
+    const tester2 = new Array(4);
+    for (let i = 0; i < 4; i++) {
+      tester2[i] = [i, new Set()];
+    }
+    for (let i = 0; i < max; i++) {
+      const key = i % 4;
+      tester2[key][1].add(i);
+    }
+    expect(res2).deep.equals(tester2.map((v) => [v[0], [...v[1]]]));
+  });
+
+  it('Test reduceByKey', async () => {
+    const max = 1000;
+    const tmp = dcc
+      .range(0, max)
+      .map((v) => {
+        const key = v % 4;
+        return [key, 1];
+      })
+      .reduceByKey((a, b) => a + b);
+
+    const res = (await tmp.collect()).sort((a, b) => a[0] - b[0]);
+
+    const tester = new Array(4);
+    for (let i = 0; i < 4; i++) {
+      tester[i] = [i, max / 4];
+    }
+
+    expect(res).deep.equals(tester);
   });
 });
