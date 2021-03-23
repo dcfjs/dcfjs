@@ -164,4 +164,242 @@ describe('MapReduce With local worker', () => {
 
     expect(res).deep.equals(tester);
   });
+
+  it('Test groupWith', async () => {
+    const t1 = dcc.parallelize([
+      ['a', 5],
+      ['a', 7],
+      ['b', 6],
+    ]);
+    const t2 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+    ]);
+    const t3 = dcc.parallelize([['a', 2]]);
+    const t4 = dcc.parallelize([
+      ['b', 42],
+      ['b', 66],
+    ]);
+    const t5 = dcc.emptyRDD();
+    let res = await t1.groupWith(t2, t3, t4, t5).collect();
+
+    res = res.sort((a, b) => a[0].localeCompare(b[0]));
+
+    expect(res).deep.equals([
+      ['a', [[5, 7], [1], [2], [], []]],
+      ['b', [[6], [4], [], [42, 66], []]],
+    ]);
+  });
+
+  it('Test cogroup', async () => {
+    const x = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+    ]);
+    const y = dcc.parallelize([['a', 2]]);
+    let res = await x.cogroup(y).collect();
+
+    res = res.sort((a, b) => a[0].localeCompare(b[0]));
+
+    expect(res).deep.equals([
+      ['a', [[1], [2]]],
+      ['b', [[4], []]],
+    ]);
+  });
+
+  it('Test join', async () => {
+    const x1 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y1 = dcc.parallelize([['a', 2]]);
+    let res1 = (await x1.join(y1).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+    expect(res1).deep.equals([['a', [1, 2]]]);
+
+    const x2 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y2 = dcc.parallelize([
+      ['a', 2],
+      ['a', 25],
+    ]);
+    let res2 = (await x2.join(y2).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+    expect(res2).deep.equals([
+      ['a', [1, 2]],
+      ['a', [1, 25]],
+    ]);
+
+    expect(await x2.join(dcc.emptyRDD()).collect()).deep.equals([]);
+  });
+
+  it('Test leftOuterJoin', async () => {
+    const x1 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y1 = dcc.parallelize([
+      ['a', 2],
+      ['z', 999],
+    ]);
+    let res1 = (await x1.leftOuterJoin(y1).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+
+    expect(res1).deep.equals([
+      ['a', [1, 2]],
+      ['b', [4, null]],
+      ['c', [654, null]],
+    ]);
+
+    const x2 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y2 = dcc.parallelize([
+      ['a', 2],
+      ['a', 25],
+    ]);
+    let res2 = (await x2.leftOuterJoin(y2).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+    expect(res2).deep.equals([
+      ['a', [1, 2]],
+      ['a', [1, 25]],
+      ['b', [4, null]],
+      ['c', [654, null]],
+    ]);
+
+    expect(
+      (await x2.leftOuterJoin(dcc.emptyRDD()).collect()).sort((a, b) =>
+        a[0].localeCompare(b[0])
+      )
+    ).deep.equals([
+      ['a', [1, null]],
+      ['b', [4, null]],
+      ['c', [654, null]],
+    ]);
+  });
+
+  it('Test rightOuterJoin', async () => {
+    const x1 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y1 = dcc.parallelize([
+      ['a', 2],
+      ['z', 999],
+    ]);
+    let res1 = (await y1.rightOuterJoin(x1).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+
+    expect(res1).deep.equals([
+      ['a', [2, 1]],
+      ['b', [null, 4]],
+      ['c', [null, 654]],
+    ]);
+
+    const x2 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y2 = dcc.parallelize([
+      ['a', 2],
+      ['a', 25],
+    ]);
+    let res2 = (await y2.rightOuterJoin(x2).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+    expect(res2).deep.equals([
+      ['a', [2, 1]],
+      ['a', [25, 1]],
+      ['b', [null, 4]],
+      ['c', [null, 654]],
+    ]);
+
+    expect(await x2.rightOuterJoin(dcc.emptyRDD()).collect()).deep.equals([]);
+  });
+
+  it('Test fullOuterJoin', async () => {
+    const x1 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y1 = dcc.parallelize([
+      ['a', 2],
+      ['z', 999],
+    ]);
+    let res1 = (await x1.fullOuterJoin(y1).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+
+    expect(res1).deep.equals([
+      ['a', [1, 2]],
+      ['b', [4, null]],
+      ['c', [654, null]],
+      ['z', [null, 999]],
+    ]);
+
+    const x2 = dcc.parallelize([
+      ['a', 1],
+      ['b', 4],
+      ['c', 654],
+    ]);
+    const y2 = dcc.parallelize([
+      ['a', 2],
+      ['a', 25],
+    ]);
+    let res2 = (await x2.fullOuterJoin(y2).collect()).sort((a, b) =>
+      a[0].localeCompare(b[0])
+    );
+
+    expect(res2).deep.equals([
+      ['a', [1, 2]],
+      ['a', [1, 25]],
+      ['b', [4, null]],
+      ['c', [654, null]],
+    ]);
+
+    expect(
+      (await x2.fullOuterJoin(dcc.emptyRDD()).collect()).sort((a, b) =>
+        a[0].localeCompare(b[0])
+      )
+    ).deep.equals([
+      ['a', [1, null]],
+      ['b', [4, null]],
+      ['c', [654, null]],
+    ]);
+
+    expect(
+      await dcc.emptyRDD().fullOuterJoin(dcc.emptyRDD()).collect()
+    ).deep.equals([]);
+  });
+
+  it('Test chained repartition', async () => {
+    const max = 10000;
+    const tmp1 = dcc.range(0, max).repartition(8).repartition(4);
+    const tmp2 = dcc
+      .range(0, max / 4)
+      .repartition(8)
+      .repartition(4)
+      .union(tmp1)
+      .repartition(32);
+
+    expect(await tmp2.count()).equals(max * 1.25);
+    expect(await tmp2.max()).equals(max - 1);
+    expect(await tmp2.min()).equals(0);
+    expect(await tmp2.reduce((a, b) => a + b)).equals(49995000 + 3123750);
+  }).timeout(10000);
 });

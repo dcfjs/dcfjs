@@ -26,6 +26,39 @@ function hashPartitionFunc<V>(numPartitions: number) {
   );
 }
 
+function realGroupWith<K>(
+  rdds: RDD<[K, any]>[],
+  context: DCFContext,
+  numPartitions?: number
+): RDD<[K, any[][]]> {
+  const rddCount = rdds.length;
+
+  return context
+    .union(
+      ...rdds.map((v, i) =>
+        v.map(
+          dcfc.captureEnv(
+            ([k, v]) => {
+              const ret: any[][] = [];
+              for (let j = 0; j < rddCount; j++) {
+                ret.push(j === i ? [v] : []);
+              }
+              return [k, ret] as [K, any[][]];
+            },
+            { rddCount, i }
+          )
+        )
+      )
+    )
+    .reduceByKey((a: any[][], b: any[][]) => {
+      const ret = [];
+      for (let i = 0; i < a.length; i++) {
+        ret.push(a[i].concat(b[i]));
+      }
+      return ret;
+    }, numPartitions);
+}
+
 export class RDD<T> {
   protected _context: DCFContext;
   readonly _chain: RDDWorkChain<T[]>;
@@ -602,6 +635,122 @@ export class RDD<T> {
       numPartitions,
       partitionFunc
     );
+  }
+
+  groupWith<K, V, V1>(
+    this: RDD<[K, V]>,
+    other1: RDD<[K, V1]>
+  ): RDD<[K, [V[], V1[]]]>;
+  groupWith<K, V, V1, V2>(
+    this: RDD<[K, V]>,
+    other1: RDD<[K, V1]>,
+    other2: RDD<[K, V2]>
+  ): RDD<[K, [V[], V1[], V2[]]]>;
+  groupWith<K, V, V1, V2, V3>(
+    this: RDD<[K, V]>,
+    other1: RDD<[K, V1]>,
+    other2: RDD<[K, V2]>,
+    other3: RDD<[K, V3]>
+  ): RDD<[K, [V[], V1[], V2[], V3[]]]>;
+  groupWith<K>(this: RDD<[K, any]>, ...others: RDD<[K, any]>[]): RDD<[K, any]>;
+  groupWith<K>(this: RDD<[K, any]>, ...others: RDD<[K, any]>[]): RDD<[K, any]> {
+    return realGroupWith([this, ...others], this._context);
+  }
+
+  cogroup<K, V, V1>(
+    this: RDD<[K, V]>,
+    other: RDD<[K, V1]>,
+    numPartitions?: number
+  ): RDD<[K, [V[], V1[]]]> {
+    return realGroupWith([this, other], this._context, numPartitions) as RDD<
+      [K, [V[], V1[]]]
+    >;
+  }
+
+  join<K, V, V1>(
+    this: RDD<[K, V]>,
+    other: RDD<[K, V1]>,
+    numPartitions?: number
+  ): RDD<[K, [V, V1]]> {
+    return this.cogroup(other, numPartitions).flatMap(([k, [v1s, v2s]]) => {
+      const ret = [];
+      for (const v1 of v1s) {
+        for (const v2 of v2s) {
+          ret.push([k, [v1, v2]] as [K, [V, V1]]);
+        }
+      }
+      return ret;
+    });
+  }
+
+  leftOuterJoin<K, V, V1>(
+    this: RDD<[K, V]>,
+    other: RDD<[K, V1]>,
+    numPartitions?: number
+  ): RDD<[K, [V, V1 | null]]> {
+    return this.cogroup(other, numPartitions).flatMap(([k, [v1s, v2s]]) => {
+      const ret = [];
+      if (v2s.length === 0) {
+        for (const v1 of v1s) {
+          ret.push([k, [v1, null]] as [K, [V, V1 | null]]);
+        }
+      } else {
+        for (const v1 of v1s) {
+          for (const v2 of v2s) {
+            ret.push([k, [v1, v2]] as [K, [V, V1 | null]]);
+          }
+        }
+      }
+      return ret;
+    });
+  }
+
+  rightOuterJoin<K, V, V1>(
+    this: RDD<[K, V]>,
+    other: RDD<[K, V1]>,
+    numPartitions?: number
+  ): RDD<[K, [V | null, V1]]> {
+    return this.cogroup(other, numPartitions).flatMap(([k, [v1s, v2s]]) => {
+      const ret = [];
+      if (v1s.length === 0) {
+        for (const v2 of v2s) {
+          ret.push([k, [null, v2]] as [K, [V | null, V1]]);
+        }
+      } else {
+        for (const v1 of v1s) {
+          for (const v2 of v2s) {
+            ret.push([k, [v1, v2]] as [K, [V | null, V1]]);
+          }
+        }
+      }
+      return ret;
+    });
+  }
+
+  fullOuterJoin<K, V, V1>(
+    this: RDD<[K, V]>,
+    other: RDD<[K, V1]>,
+    numPartitions?: number
+  ): RDD<[K, [V | null, V1 | null]]> {
+    return this.cogroup(other, numPartitions).flatMap(([k, [v1s, v2s]]) => {
+      const ret = [];
+      if (v1s.length === 0) {
+        for (const v2 of v2s) {
+          ret.push([k, [null, v2]] as [K, [V | null, V1 | null]]);
+        }
+      } else if (v2s.length === 0) {
+        for (const v1 of v1s) {
+          ret.push([k, [v1, null]] as [K, [V | null, V1 | null]]);
+        }
+      } else {
+        for (const v1 of v1s) {
+          for (const v2 of v2s) {
+            ret.push([k, [v1, v2]] as [K, [V | null, V1 | null]]);
+          }
+        }
+      }
+      return ret;
+    });
   }
 }
 

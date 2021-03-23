@@ -67,6 +67,43 @@ export class DCFContext {
     });
   }
 
+  parallelize<T>(arr: T[], numPartitions?: number): RDD<T> {
+    numPartitions = numPartitions || this.options.defaultPartitions;
+    if (!numPartitions || numPartitions <= 0) {
+      throw new Error('Must specify partitions count.');
+    }
+    const args: T[][] = [];
+
+    const rest = arr.length % numPartitions;
+    const eachCount = (arr.length - rest) / numPartitions;
+
+    let index = 0;
+    for (let i = 0; i < numPartitions; i++) {
+      const subCount = i < rest ? eachCount + 1 : eachCount;
+      const end = index + subCount;
+      args.push(arr.slice(index, end));
+      index = end;
+    }
+
+    return new RDD<T>(this, {
+      n: numPartitions,
+      p: dcfc.captureEnv(
+        (partitionId) => {
+          const data = args[partitionId];
+          return dcfc.captureEnv(() => data, {
+            data,
+          });
+        },
+        {
+          args,
+          dcfc: dcfc.requireModule('@dcfjs/common'),
+        }
+      ),
+      t: 'parallelize()',
+      d: [],
+    });
+  }
+
   range(to: number): RDD<number>;
   range(
     from: number,
