@@ -147,7 +147,12 @@ export function finalizeChain<T, T1>(
 export function finalizeChainWithContext<T2, T, T1, Context>(
   chain: RDDWorkChain<T>,
   initializer: InitializeFunc<Context>,
-  mapper: (v: T, ctx: Context, partitionId: number) => T2 | Promise<T2>,
+  // mapper: (v: T, ctx: Context, partitionId: number) => T2 | Promise<T2>,
+  mapper: (
+    partitionId: number,
+    ctx: Context,
+    pp: () => T | Promise<T>
+  ) => () => T2 | Promise<T2>,
   finalizer: (v: T2[], ctx: Context) => T1,
   cleanup?: CleanUpFunc<Context>,
   titleMapper?: (t: string) => string
@@ -159,26 +164,11 @@ export function finalizeChainWithContext<T2, T, T1, Context>(
     p: dcfc.captureEnv(
       (partitionId, dependValues, ctx) => {
         const pp = p(partitionId, dependValues);
-        return dcfc.captureEnv(
-          () => {
-            const org = pp();
-            if (org instanceof Promise) {
-              return org.then((v) => mapper(v, ctx, partitionId));
-            }
-            return mapper(org, ctx, partitionId);
-          },
-          {
-            pp,
-            ctx,
-            partitionId,
-            mapper,
-          }
-        );
+        return mapper(partitionId, ctx, pp);
       },
       {
         p,
         mapper,
-        dcfc: dcfc.requireModule('@dcfjs/common'),
       }
     ),
     i: initializer,

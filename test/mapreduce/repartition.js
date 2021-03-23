@@ -33,4 +33,18 @@ describe('MapReduce With local worker', () => {
     }
     expect(await tmp.glom().collect()).deep.equals(compare);
   });
+
+  it('Test coalesce', async () => {
+    const max = 10000;
+    const tmp = dcc.range(0, max, undefined, 4);
+    const tmp1 = tmp.coalesce(5);
+
+    expect(await tmp.collect()).deep.equals(await tmp1.collect());
+    expect((await tmp1.getNumPartitions()) === 5);
+    const sizes = await tmp1
+      .glom()
+      .map((v) => v.length)
+      .collect();
+    expect(sizes.every((v) => v >= 1990 && v <= 2010)).to.equals(true);
+  });
 });
