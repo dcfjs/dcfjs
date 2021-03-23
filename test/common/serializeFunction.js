@@ -64,8 +64,12 @@ describe('SerializeFunction', () => {
     expect(await client.execute(() => a === c)).to.equal(false);
   });
 
-  it('StorageClient', async () => {
-    const a = new StorageClient('localhost:17741');
+  it('Serialize StorageClient', async () => {
+    const a = new StorageClient({
+      endpoint: 'localhost:17741',
+      timeout: 600000,
+      renewInterval: 60000,
+    });
     expect(await client.execute(() => a.constructor.name)).to.equal(
       StorageClient.name
     );
