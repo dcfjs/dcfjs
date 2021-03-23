@@ -33,7 +33,7 @@ describe('MapReduce With local worker', () => {
   it('Test cache', async () => {
     const primes1 = dcc.range(0, 100000).filter(isPrime);
 
-    const primes2 = await primes1.persist();
+    const primes2 = primes1.persist();
 
     expect(await primes1.count()).equals(await primes2.count());
     expect(await primes1.collect()).deep.equals(await primes2.collect());

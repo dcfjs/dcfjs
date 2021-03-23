@@ -61,15 +61,17 @@ function realGroupWith<K>(
 
 export class RDD<T> {
   protected _context: DCFContext;
-  readonly _chain: RDDWorkChain<T[]>;
-  constructor(context: DCFContext, chain: RDDWorkChain<T[]>) {
+  readonly _chain: Promise<RDDWorkChain<T[]>>;
+  constructor(
+    context: DCFContext,
+    chain: RDDWorkChain<T[]> | Promise<RDDWorkChain<T[]>>
+  ) {
     this._context = context;
-    this._chain = chain;
+    this._chain = Promise.resolve(chain);
   }
 
-  getNumPartitions(): number {
-    const chain = this._chain;
-    return chain.n;
+  getNumPartitions(): Promise<number> {
+    return this._chain.then((v) => v.n);
   }
 
   protected execute<T, T1, Context>(
@@ -95,78 +97,86 @@ export class RDD<T> {
   }
 
   collect(): Promise<T[]> {
-    return this.execute(
-      finalizeChain(
-        this._chain,
-        dcfc.captureEnv((v) => dcfc.concatArrays(v), {
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }),
-        (t) => `${t}.collect()`
+    return this._chain
+      .then((chain) =>
+        finalizeChain(
+          chain,
+          dcfc.captureEnv((v) => dcfc.concatArrays(v), {
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }),
+          (t) => `${t}.collect()`
+        )
       )
-    );
+      .then((chain) => this.execute(chain));
   }
 
   count(): Promise<number> {
-    return this.execute(
-      finalizeChain(
-        mapChain(this._chain, (v) => v.length),
-        (v) => v.reduce((a, b) => a + b, 0),
-        (t) => `${t}.count()`
+    return this._chain
+      .then((chain) =>
+        finalizeChain(
+          mapChain(chain, (v) => v.length),
+          (v) => v.reduce((a, b) => a + b, 0),
+          (t) => `${t}.count()`
+        )
       )
-    );
+      .then((chain) => this.execute(chain));
   }
 
   take(limit: number): Promise<T[]> {
-    return this.execute(
-      finalizeChain(
-        mapChain(
-          this._chain,
-          dcfc.captureEnv((v) => v.slice(0, limit), {
+    return this._chain
+      .then((chain) =>
+        finalizeChain(
+          mapChain(
+            chain,
+            dcfc.captureEnv((v) => v.slice(0, limit), {
+              limit,
+            })
+          ),
+          dcfc.captureEnv((v) => dcfc.takeArrays(v, limit), {
             limit,
-          })
-        ),
-        dcfc.captureEnv((v) => dcfc.takeArrays(v, limit), {
-          limit,
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }),
-        (t) => `${t}.collect()`
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }),
+          (t) => `${t}.collect()`
+        )
       )
-    );
+      .then((chain) => this.execute(chain));
   }
 
   reduce(reduceFunc: (a: T, b: T) => T): Promise<T | undefined> {
-    return this.execute(
-      finalizeChain(
-        mapChain(
-          this._chain,
+    return this._chain
+      .then((chain) =>
+        finalizeChain(
+          mapChain(
+            chain,
+            dcfc.captureEnv(
+              (v) => {
+                if (v.length === 0) {
+                  return [];
+                }
+                return [v.reduce(reduceFunc)];
+              },
+              {
+                reduceFunc,
+              }
+            )
+          ),
           dcfc.captureEnv(
             (v) => {
-              if (v.length === 0) {
-                return [];
+              const a = dcfc.concatArrays(v);
+              if (a.length === 0) {
+                return undefined;
               }
-              return [v.reduce(reduceFunc)];
+              return a.reduce(reduceFunc);
             },
             {
               reduceFunc,
+              dcfc: dcfc.requireModule('@dcfjs/common'),
             }
-          )
-        ),
-        dcfc.captureEnv(
-          (v) => {
-            const a = dcfc.concatArrays(v);
-            if (a.length === 0) {
-              return undefined;
-            }
-            return a.reduce(reduceFunc);
-          },
-          {
-            reduceFunc,
-            dcfc: dcfc.requireModule('@dcfjs/common'),
-          }
-        ),
-        (t) => `${t}.reduce()`
+          ),
+          (t) => `${t}.reduce()`
+        )
       )
-    );
+      .then((chain) => this.execute(chain));
   }
 
   max(
@@ -206,7 +216,10 @@ export class RDD<T> {
   }
 
   mapPartitions<T1>(transformer: (input: T[]) => T1[]): RDD<T1> {
-    return new RDD<T1>(this._context, mapChain(this._chain, transformer));
+    return new RDD<T1>(
+      this._context,
+      this._chain.then((chain) => mapChain(chain, transformer))
+    );
   }
 
   glom(): RDD<T[]> {
@@ -237,276 +250,317 @@ export class RDD<T> {
   partitionBy(numPartitions: number, partitionFunc: (v: T) => number): RDD<T> {
     const storage = this._context.getStorage();
 
-    const dep = finalizeChainWithContext(
-      this._chain,
-      dcfc.captureEnv(
-        () => {
-          return storage.startSession();
-        },
-        {
-          storage,
-        }
-      ),
-      dcfc.captureEnv(
-        (partitionId, ctx, pp) => {
-          return dcfc.captureEnv(
-            async () => {
-              const data = await pp();
-              const regrouped: T[][] = [];
-              for (let i = 0; i < numPartitions; i++) {
-                regrouped[i] = [];
-              }
-              for (const item of data) {
-                const parId = partitionFunc(item);
-                regrouped[parId].push(item);
-              }
-
-              const ret: (string | null)[] = [];
-              const promises = [];
-              for (let i = 0; i < numPartitions; i++) {
-                if (regrouped[i].length === 0) {
-                  ret.push(null);
-                  continue;
+    const newChainPromise = this._chain.then((chain) => {
+      const dep = finalizeChainWithContext(
+        chain,
+        dcfc.captureEnv(
+          () => {
+            return storage.startSession();
+          },
+          {
+            storage,
+          }
+        ),
+        dcfc.captureEnv(
+          (partitionId, ctx, pp) => {
+            return dcfc.captureEnv(
+              async () => {
+                const data = await pp();
+                const regrouped: T[][] = [];
+                for (let i = 0; i < numPartitions; i++) {
+                  regrouped[i] = [];
                 }
-                const key = `${partitionId}-${i}`;
-                const buf = dcfc.encode(regrouped[i]);
-                promises.push(ctx.writeFile(key, buf));
-                ret.push(key);
-              }
-              await Promise.all(promises);
-              return ret;
-            },
-            {
-              partitionId,
-              numPartitions,
-              partitionFunc,
-              pp,
-              ctx,
-              dcfc: dcfc.requireModule('@dcfjs/common'),
-            }
-          );
-        },
-        {
-          numPartitions,
-          partitionFunc,
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }
-      ),
-      (keys, ctx) => [keys, ctx],
-      (ctx) => ctx.close(),
-      (title) => `${title}.repartition()`
-    );
-
-    return new RDD(this._context, {
-      n: numPartitions,
-      p: dcfc.captureEnv(
-        (partitionId, dependRets) => {
-          const [allKeys, ctx] = dependRets[0] as [
-            (string | null)[][],
-            dcfc.StorageSession
-          ];
-          const keys = allKeys.map((v) => v[partitionId]);
-          return dcfc.captureEnv(
-            () => {
-              const loads: (T[] | Promise<T[]>)[] = [];
-              for (const key of keys) {
-                if (key) {
-                  loads.push(
-                    ctx.readFile(key).then((buf) => dcfc.decode(buf) as T[])
-                  );
-                } else {
-                  loads.push([]);
+                for (const item of data) {
+                  const parId = partitionFunc(item);
+                  regrouped[parId].push(item);
                 }
+
+                const ret: (string | null)[] = [];
+                const promises = [];
+                for (let i = 0; i < numPartitions; i++) {
+                  if (regrouped[i].length === 0) {
+                    ret.push(null);
+                    continue;
+                  }
+                  const key = `${partitionId}-${i}`;
+                  const buf = dcfc.encode(regrouped[i]);
+                  promises.push(ctx.writeFile(key, buf));
+                  ret.push(key);
+                }
+                await Promise.all(promises);
+                return ret;
+              },
+              {
+                partitionId,
+                numPartitions,
+                partitionFunc,
+                pp,
+                ctx,
+                dcfc: dcfc.requireModule('@dcfjs/common'),
               }
-              return Promise.all(loads).then((pieces) =>
-                dcfc.concatArrays(pieces)
-              );
-            },
-            {
-              keys,
-              ctx,
-              dcfc: dcfc.requireModule('@dcfjs/common'),
-            }
-          );
-        },
-        {
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }
-      ),
-      t: 'repartition()',
-      d: [dep as RDDFinalizedWorkChain],
+            );
+          },
+          {
+            numPartitions,
+            partitionFunc,
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }
+        ),
+        (keys, ctx) => [keys, ctx],
+        (ctx) => ctx.close(),
+        (title) => `${title}.repartition()`
+      );
+
+      return {
+        n: numPartitions,
+        p: dcfc.captureEnv(
+          (partitionId, dependRets) => {
+            const [allKeys, ctx] = dependRets[0] as [
+              (string | null)[][],
+              dcfc.StorageSession
+            ];
+            const keys = allKeys.map((v) => v[partitionId]);
+            return dcfc.captureEnv(
+              () => {
+                const loads: (T[] | Promise<T[]>)[] = [];
+                for (const key of keys) {
+                  if (key) {
+                    loads.push(
+                      ctx.readFile(key).then((buf) => dcfc.decode(buf) as T[])
+                    );
+                  } else {
+                    loads.push([]);
+                  }
+                }
+                return Promise.all(loads).then((pieces) =>
+                  dcfc.concatArrays(pieces)
+                );
+              },
+              {
+                keys,
+                ctx,
+                dcfc: dcfc.requireModule('@dcfjs/common'),
+              }
+            );
+          },
+          {
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }
+        ),
+        t: 'repartition()',
+        d: [dep as RDDFinalizedWorkChain],
+      };
     });
+
+    return new RDD(this._context, newChainPromise);
   }
 
-  async cache(storage?: StorageClient) {
+  cache(storage?: StorageClient) {
     if (!storage) {
       if (!this._context.storage) {
         throw new Error('No storage available.');
       }
       storage = this._context.storage;
     }
-    const session = await storage.startSession();
-    const keys = await this.execute(
-      finalizeChain(
-        mapChain(
-          this._chain,
-          dcfc.captureEnv(
-            async (data, partitionId) => {
-              if (data.length === 0) {
-                return null;
+    const sessionPromise = storage.startSession();
+    const chainPromise = (async () => {
+      const session = await sessionPromise;
+      const chain = await this._chain;
+      const keys = await this.execute(
+        finalizeChain(
+          mapChain(
+            chain,
+            dcfc.captureEnv(
+              async (data, partitionId) => {
+                if (data.length === 0) {
+                  return null;
+                }
+                const key = `${partitionId}`;
+                const buf = dcfc.encode(data);
+                await session.writeFile(key, buf);
+                return key;
+              },
+              {
+                session,
+                dcfc: dcfc.requireModule('@dcfjs/common'),
               }
-              const key = `${partitionId}`;
-              const buf = dcfc.encode(data);
-              await session.writeFile(key, buf);
-              return key;
-            },
-            {
-              session,
-              dcfc: dcfc.requireModule('@dcfjs/common'),
-            }
-          )
+            )
+          ),
+          (v) => {
+            return v;
+          },
+          (t) => `${t}.reduce()`
+        )
+      );
+      return {
+        n: keys.length,
+        p: dcfc.captureEnv(
+          (partitionId) => {
+            const key = keys[partitionId];
+            return dcfc.captureEnv(
+              async () => {
+                if (!key) {
+                  return [];
+                }
+                const buf = await session.readFile(key);
+                return dcfc.decode(buf) as T[];
+              },
+              {
+                session,
+                key,
+                dcfc: dcfc.requireModule('@dcfjs/common'),
+              }
+            );
+          },
+          {
+            session,
+            keys,
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }
         ),
-        (v) => {
-          return v;
-        },
-        (t) => `${t}.reduce()`
-      )
-    );
-    return new CachedRDD(this._context, session, keys);
+        t: 'cache()',
+        d: [],
+      };
+    })();
+
+    return new CachedRDD(this._context, chainPromise, sessionPromise);
   }
 
-  async persist(storage?: StorageClient) {
+  persist(storage?: StorageClient) {
     return this.cache(storage);
   }
 
   coalesce(numPartitions: number) {
-    const originPartitions = this._chain.n;
+    const newChainPromise = this._chain.then((chain) => {
+      const originPartitions = chain.n;
 
-    // [index: originPartitionId]: [newPartitionIdBase, [rate for each newPartition] ]
-    const partitionArgs: [number, number[]][] = [];
-    let last: number[] = [];
-    partitionArgs.push([0, last]);
-    const rate = originPartitions / numPartitions;
+      // [index: originPartitionId]: [newPartitionIdBase, [rate for each newPartition] ]
+      const partitionArgs: [number, number[]][] = [];
+      let last: number[] = [];
+      partitionArgs.push([0, last]);
+      const rate = originPartitions / numPartitions;
 
-    let counter = 0;
-    for (let i = 0; i < numPartitions - 1; i++) {
-      counter += rate;
-      while (counter >= 1) {
-        counter -= 1;
-        last = [];
-        partitionArgs.push([i, last]);
+      let counter = 0;
+      for (let i = 0; i < numPartitions - 1; i++) {
+        counter += rate;
+        while (counter >= 1) {
+          counter -= 1;
+          last = [];
+          partitionArgs.push([i, last]);
+        }
+        last.push(counter);
       }
-      last.push(counter);
-    }
-    // manually add last partition to avoid precsion loss.
-    while (partitionArgs.length < originPartitions) {
-      partitionArgs.push([numPartitions - 1, []]);
-    }
+      // manually add last partition to avoid precsion loss.
+      while (partitionArgs.length < originPartitions) {
+        partitionArgs.push([numPartitions - 1, []]);
+      }
 
-    const storage = this._context.getStorage();
+      const storage = this._context.getStorage();
 
-    const dep = finalizeChainWithContext(
-      this._chain,
-      dcfc.captureEnv(
-        () => {
-          return storage.startSession();
-        },
-        {
-          storage,
-        }
-      ),
-      dcfc.captureEnv(
-        (partitionId, ctx, pp) => {
-          const arg = partitionArgs[partitionId];
-          return dcfc.captureEnv(
-            async () => {
-              const data = await pp();
-              const regrouped: T[][] = [];
-              for (let i = 0; i < arg[0]; i++) {
-                regrouped.push([]);
-              }
-              let lastIndex = 0;
-              for (const rate of arg[1]) {
-                const nextIndex = Math.floor(data.length * rate);
-                regrouped.push(data.slice(lastIndex, nextIndex));
-                lastIndex = nextIndex;
-              }
-              regrouped.push(data.slice(lastIndex));
-
-              const ret: (string | null)[] = [];
-              const promises = [];
-              for (let i = 0; i < regrouped.length; i++) {
-                if (regrouped[i].length === 0) {
-                  ret.push(null);
-                  continue;
+      const dep = finalizeChainWithContext(
+        chain,
+        dcfc.captureEnv(
+          () => {
+            return storage.startSession();
+          },
+          {
+            storage,
+          }
+        ),
+        dcfc.captureEnv(
+          (partitionId, ctx, pp) => {
+            const arg = partitionArgs[partitionId];
+            return dcfc.captureEnv(
+              async () => {
+                const data = await pp();
+                const regrouped: T[][] = [];
+                for (let i = 0; i < arg[0]; i++) {
+                  regrouped.push([]);
                 }
-                const key = `${partitionId}-${i}`;
-                const buf = dcfc.encode(regrouped[i]);
-                promises.push(ctx.writeFile(key, buf));
-                ret.push(key);
-              }
-              await Promise.all(promises);
-              return ret;
-            },
-            {
-              partitionId,
-              arg,
-              pp,
-              ctx,
-              dcfc: dcfc.requireModule('@dcfjs/common'),
-            }
-          );
-        },
-        {
-          numPartitions,
-          partitionArgs,
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }
-      ),
-      (keys, ctx) => [keys, ctx],
-      (ctx) => ctx.close(),
-      (title) => `${title}.coalesce()`
-    );
-
-    return new RDD(this._context, {
-      n: numPartitions,
-      p: dcfc.captureEnv(
-        (partitionId, dependRets) => {
-          const [allKeys, ctx] = dependRets[0] as [
-            (string | null)[][],
-            dcfc.StorageSession
-          ];
-          const keys = allKeys.map((v) => v[partitionId]);
-          return dcfc.captureEnv(
-            () => {
-              const loads: (T[] | Promise<T[]>)[] = [];
-              for (const key of keys) {
-                if (key) {
-                  loads.push(
-                    ctx.readFile(key).then((buf) => dcfc.decode(buf) as T[])
-                  );
-                } else {
-                  loads.push([]);
+                let lastIndex = 0;
+                for (const rate of arg[1]) {
+                  const nextIndex = Math.floor(data.length * rate);
+                  regrouped.push(data.slice(lastIndex, nextIndex));
+                  lastIndex = nextIndex;
                 }
+                regrouped.push(data.slice(lastIndex));
+
+                const ret: (string | null)[] = [];
+                const promises = [];
+                for (let i = 0; i < regrouped.length; i++) {
+                  if (regrouped[i].length === 0) {
+                    ret.push(null);
+                    continue;
+                  }
+                  const key = `${partitionId}-${i}`;
+                  const buf = dcfc.encode(regrouped[i]);
+                  promises.push(ctx.writeFile(key, buf));
+                  ret.push(key);
+                }
+                await Promise.all(promises);
+                return ret;
+              },
+              {
+                partitionId,
+                arg,
+                pp,
+                ctx,
+                dcfc: dcfc.requireModule('@dcfjs/common'),
               }
-              return Promise.all(loads).then((pieces) =>
-                dcfc.concatArrays(pieces)
-              );
-            },
-            {
-              keys,
-              ctx,
-              dcfc: dcfc.requireModule('@dcfjs/common'),
-            }
-          );
-        },
-        {
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }
-      ),
-      t: 'coalesce()',
-      d: [dep as RDDFinalizedWorkChain],
+            );
+          },
+          {
+            numPartitions,
+            partitionArgs,
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }
+        ),
+        (keys, ctx) => [keys, ctx],
+        (ctx) => ctx.close(),
+        (title) => `${title}.coalesce()`
+      );
+      return {
+        n: numPartitions,
+        p: dcfc.captureEnv(
+          (partitionId, dependRets) => {
+            const [allKeys, ctx] = dependRets[0] as [
+              (string | null)[][],
+              dcfc.StorageSession
+            ];
+            const keys = allKeys.map((v) => v[partitionId]);
+            return dcfc.captureEnv(
+              () => {
+                const loads: (T[] | Promise<T[]>)[] = [];
+                for (const key of keys) {
+                  if (key) {
+                    loads.push(
+                      ctx.readFile(key).then((buf) => dcfc.decode(buf) as T[])
+                    );
+                  } else {
+                    loads.push([]);
+                  }
+                }
+                return Promise.all(loads).then((pieces) =>
+                  dcfc.concatArrays(pieces)
+                );
+              },
+              {
+                keys,
+                ctx,
+                dcfc: dcfc.requireModule('@dcfjs/common'),
+              }
+            );
+          },
+          {
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }
+        ),
+        t: 'coalesce()',
+        d: [dep as RDDFinalizedWorkChain],
+      };
     });
+
+    return new RDD(this._context, newChainPromise);
   }
 
   repartition(numPartitions: number): RDD<T> {
@@ -755,46 +809,19 @@ export class RDD<T> {
 }
 
 export class CachedRDD<T> extends RDD<T> {
-  storageSession: StorageSession;
+  storageSession: Promise<StorageSession>;
 
   constructor(
     context: DCFContext,
-    storageSession: StorageSession,
-    keys: (string | null)[]
+    chain: Promise<RDDWorkChain<T[]>>,
+    storageSession: Promise<StorageSession>
   ) {
-    super(context, {
-      n: keys.length,
-      p: dcfc.captureEnv(
-        (partitionId) => {
-          const key = keys[partitionId];
-          return dcfc.captureEnv(
-            async () => {
-              if (!key) {
-                return [];
-              }
-              const buf = await storageSession.readFile(key);
-              return dcfc.decode(buf) as T[];
-            },
-            {
-              storageSession,
-              key,
-              dcfc: dcfc.requireModule('@dcfjs/common'),
-            }
-          );
-        },
-        {
-          storageSession,
-          keys,
-          dcfc: dcfc.requireModule('@dcfjs/common'),
-        }
-      ),
-      t: 'cache()',
-      d: [],
-    });
+    super(context, chain);
     this.storageSession = storageSession;
   }
 
   async unpersist(): Promise<void> {
-    await this.storageSession.close();
+    const session = await this.storageSession;
+    await session.close();
   }
 }

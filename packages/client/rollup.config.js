@@ -18,6 +18,8 @@ export default {
     ...Object.keys(pkg.dependencies || {}),
     ...Object.keys(pkg.peerDependencies || {}),
     'v8',
+    'fs',
+    'path',
   ],
   plugins: [banner('@noCaptureEnv'), typescript()],
 };

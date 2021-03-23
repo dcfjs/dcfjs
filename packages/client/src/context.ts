@@ -10,6 +10,7 @@ import * as dcfc from '@dcfjs/common';
 import { RDD } from './rdd';
 import { InitializeFunc, PartitionFunc } from './chain';
 import * as v8 from 'v8';
+import { listFiles } from './fs-helper';
 
 export interface DCFMapReduceOptions {
   client?: MasterServiceClient;
@@ -173,44 +174,50 @@ export class DCFContext {
   }
 
   union<T>(...rdds: RDD<T>[]): RDD<T> {
-    const partitionCounts: number[] = [];
-    const rddFuncs: PartitionFunc<T[], void>[] = [];
-    const dependCounts: number[] = [];
+    const chainsPromise = Promise.all(rdds.map((v) => v._chain));
 
-    for (let i = 0; i < rdds.length; i++) {
-      partitionCounts.push(rdds[i]._chain.n);
-      rddFuncs.push(rdds[i]._chain.p);
-      dependCounts.push(rdds[i]._chain.d.length);
-    }
-    const numPartitions = partitionCounts.reduce((a, b) => a + b);
-    return new RDD<T>(this, {
-      n: numPartitions,
-      p: dcfc.captureEnv(
-        (partitionId, dependValues) => {
-          let dependStart = 0;
-          for (let i = 0; i < partitionCounts.length; i++) {
-            if (partitionId < partitionCounts[i]) {
-              return rddFuncs[i](
-                partitionId,
-                dependValues.slice(dependStart, dependStart + dependCounts[i])
-              );
+    const chainPromise = chainsPromise.then((chains) => {
+      const partitionCounts: number[] = [];
+      const rddFuncs: PartitionFunc<T[], void>[] = [];
+      const dependCounts: number[] = [];
+
+      for (let i = 0; i < rdds.length; i++) {
+        partitionCounts.push(chains[i].n);
+        rddFuncs.push(chains[i].p);
+        dependCounts.push(chains[i].d.length);
+      }
+      const numPartitions = partitionCounts.reduce((a, b) => a + b);
+      return {
+        n: numPartitions,
+        p: dcfc.captureEnv(
+          (partitionId, dependValues) => {
+            let dependStart = 0;
+            for (let i = 0; i < partitionCounts.length; i++) {
+              if (partitionId < partitionCounts[i]) {
+                return rddFuncs[i](
+                  partitionId,
+                  dependValues.slice(dependStart, dependStart + dependCounts[i])
+                );
+              }
+              partitionId -= partitionCounts[i];
+              dependStart += dependCounts[i];
             }
-            partitionId -= partitionCounts[i];
-            dependStart += dependCounts[i];
+            // `partitionId` should be less than totalPartitions.
+            // so it should not reach here.
+            throw new Error('Internal error.');
+          },
+          {
+            rddFuncs,
+            partitionCounts,
+            dependCounts,
           }
-          // `partitionId` should be less than totalPartitions.
-          // so it should not reach here.
-          throw new Error('Internal error.');
-        },
-        {
-          rddFuncs,
-          partitionCounts,
-          dependCounts,
-        }
-      ),
-      t: `union(${rdds.map((v) => v._chain.t).join(',')})`,
-      d: dcfc.concatArrays(rdds.map((v) => v._chain.d)),
+        ),
+        t: `union(${chains.map((v) => v.t).join(',')})`,
+        d: dcfc.concatArrays(chains.map((v) => v.d)),
+      };
     });
+
+    return new RDD<T>(this, chainPromise);
   }
 
   emptyRDD(): RDD<never> {
@@ -220,5 +227,16 @@ export class DCFContext {
       t: 'emptyRDD()',
       d: [],
     });
+  }
+
+  binaryFiles(
+    path: string,
+    {
+      recursive = false,
+    }: {
+      recursive?: boolean;
+    } = {}
+  ): RDD<[string, Buffer]> {
+    throw new Error('TODO');
   }
 }
