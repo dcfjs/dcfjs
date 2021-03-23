@@ -98,7 +98,7 @@ export async function runWorkChain<
 
 export function mapChain<T, T1>(
   { n, p, t, d }: RDDWorkChain<T>,
-  mapper: (v: T) => T1 | Promise<T1>,
+  mapper: (v: T, parititionId: number) => T1 | Promise<T1>,
   titleMapper?: (t: string) => string
 ): RDDWorkChain<T1> {
   return {
@@ -110,13 +110,14 @@ export function mapChain<T, T1>(
           () => {
             const org = pp();
             if (org instanceof Promise) {
-              return org.then(mapper);
+              return org.then((v) => mapper(v, partitionId));
             }
-            return mapper(org);
+            return mapper(org, partitionId);
           },
           {
             pp,
             mapper,
+            partitionId,
           }
         );
       },

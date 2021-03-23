@@ -8,6 +8,7 @@ import {
   runWorkChain,
   finalizeChainWithContext,
 } from './chain';
+import { requireModule, StorageClient, StorageSession } from '@dcfjs/common';
 
 export class RDD<T> {
   protected _context: DCFContext;
@@ -273,5 +274,91 @@ export class RDD<T> {
       t: 'repartition()',
       d: [dep as RDDFinalizedWorkChain],
     });
+  }
+
+  async cache(storage?: StorageClient) {
+    if (!storage) {
+      if (!this._context.storage) {
+        throw new Error('No storage available.');
+      }
+      storage = this._context.storage;
+    }
+    const session = await storage.startSession();
+    const keys = await this.execute(
+      finalizeChain(
+        mapChain(
+          this._chain,
+          dcfc.captureEnv(
+            async (data, partitionId) => {
+              if (data.length === 0) {
+                return null;
+              }
+              const key = `${partitionId}`;
+              const buf = dcfc.encode(data);
+              await session.writeFile(key, buf);
+              return key;
+            },
+            {
+              session,
+              dcfc: dcfc.requireModule('@dcfjs/common'),
+            }
+          )
+        ),
+        (v) => {
+          return v;
+        },
+        (t) => `${t}.reduce()`
+      )
+    );
+    return new CachedRDD(this._context, session, keys);
+  }
+
+  async persist(storage?: StorageClient) {
+    return this.cache(storage);
+  }
+}
+
+export class CachedRDD<T> extends RDD<T> {
+  storageSession: StorageSession;
+
+  constructor(
+    context: DCFContext,
+    storageSession: StorageSession,
+    keys: (string | null)[]
+  ) {
+    super(context, {
+      n: keys.length,
+      p: dcfc.captureEnv(
+        (partitionId) => {
+          const key = keys[partitionId];
+          return dcfc.captureEnv(
+            async () => {
+              if (!key) {
+                return [];
+              }
+              const buf = await storageSession.readFile(key);
+              return dcfc.decode(buf) as T[];
+            },
+            {
+              storageSession,
+              key,
+              dcfc: dcfc.requireModule('@dcfjs/common'),
+            }
+          );
+        },
+        {
+          storageSession,
+          keys,
+          dcfc: dcfc.requireModule('@dcfjs/common'),
+        }
+      ),
+      t: 'cache()',
+      d: [],
+    });
+    this.storageSession = storageSession;
+  }
+
+  async unpersist(): Promise<void> {
+    await this.storageSession.close();
   }
 }

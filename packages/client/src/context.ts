@@ -1,10 +1,10 @@
-import { StorageClient } from './../../common/src/storage';
 import * as grpc from '@grpc/grpc-js';
 import { MasterServiceClient } from '@dcfjs/proto/dcf/MasterService';
 import {
   MasterExecFunction,
   protoDescriptor,
   serializeFunction,
+  StorageClient,
 } from '@dcfjs/common';
 import * as dcfc from '@dcfjs/common';
 import { RDD } from './rdd';
