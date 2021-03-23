@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "@dcfjs/common": "^0.0.0",
-    "@grpc/grpc-js": "^1.2.10"
+    "@grpc/grpc-js": "^1.2.10",
+    "js-xxhash": "^1.0.4"
   }
 }

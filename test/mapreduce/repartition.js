@@ -47,4 +47,33 @@ describe('MapReduce With local worker', () => {
       .collect();
     expect(sizes.every((v) => v >= 1990 && v <= 2010)).to.equals(true);
   });
+
+  it('Test repartition', async () => {
+    const max = 10000;
+    const tmp = await dcc.range(0, max).repartition(16).cache();
+
+    expect((await tmp.getNumPartitions()) === 16);
+    expect(await tmp.count()).equals(max);
+    expect(await tmp.max()).equals(max - 1);
+    expect(await tmp.min()).equals(0);
+    expect(await tmp.reduce((a, b) => a + b)).equals((max * (max - 1)) / 2);
+    await tmp.unpersist();
+  });
+
+  it('Test distinct', async () => {
+    const max = 100000;
+    const tmp = dcc
+      .range(0, max)
+      .map((v) => 1)
+      .distinct();
+    expect(await tmp.collect()).deep.equals([1]);
+
+    const tmp2 = dcc.range(0, max / 10).map((v) => 4);
+    const tmp3 = dcc.range(0, max / 10).map((v) => 8);
+    const tmp4 = dcc.range(0, max / 10).filter((v) => false);
+    const tmp5 = tmp2.union(tmp3).union(tmp4).distinct();
+    const res = await tmp5.collect();
+
+    expect(res.sort()).deep.equals([4, 8]);
+  });
 });

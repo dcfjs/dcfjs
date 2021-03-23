@@ -8,7 +8,23 @@ import {
   runWorkChain,
   finalizeChainWithContext,
 } from './chain';
-import { requireModule, StorageClient, StorageSession } from '@dcfjs/common';
+import { StorageClient, StorageSession } from '@dcfjs/common';
+import * as XXHash from 'js-xxhash';
+
+function hashPartitionFunc<V>(numPartitions: number) {
+  const seed = ((Math.random() * 0xffffffff) | 0) >>> 0;
+  return dcfc.captureEnv(
+    (data: V) => {
+      return XXHash.xxHash32(dcfc.encode(data), seed) % numPartitions;
+    },
+    {
+      numPartitions,
+      seed,
+      XXHash: dcfc.requireModule('js-xxhash'),
+      dcfc: dcfc.requireModule('@dcfjs/common'),
+    }
+  );
+}
 
 export class RDD<T> {
   protected _context: DCFContext;
@@ -458,6 +474,44 @@ export class RDD<T> {
       t: 'coalesce()',
       d: [dep as RDDFinalizedWorkChain],
     });
+  }
+
+  repartition(numPartitions: number): RDD<T> {
+    return this.partitionBy(
+      numPartitions,
+      dcfc.captureEnv(() => Math.floor(Math.random() * numPartitions), {
+        numPartitions,
+      })
+    );
+  }
+
+  distinct(numPartitions?: number): RDD<T> {
+    numPartitions = numPartitions || this._context.options.defaultPartitions;
+    if (!numPartitions || numPartitions < 0) {
+      throw new Error('Must specify partitions count.');
+    }
+
+    const partitionMapper = dcfc.captureEnv(
+      (datas) => {
+        const ret = [];
+        const map: { [key: string]: T } = {};
+        for (const item of datas) {
+          const k = dcfc.encode(item).toString('base64');
+          if (!map[k]) {
+            map[k] = item;
+            ret.push(item);
+          }
+        }
+        return ret;
+      },
+      {
+        dcfc: dcfc.requireModule('@dcfjs/common'),
+      }
+    );
+
+    return this.mapPartitions(partitionMapper)
+      .partitionBy(numPartitions, hashPartitionFunc<T>(numPartitions))
+      .mapPartitions(partitionMapper);
   }
 }
 
