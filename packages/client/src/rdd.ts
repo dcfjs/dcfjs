@@ -61,14 +61,17 @@ function realGroupWith<K>(
 
 export class RDD<T> {
   protected _context: DCFContext;
-  readonly _chain: () => Promise<RDDWorkChain<T[]>>;
-  constructor(context: DCFContext, chain: () => Promise<RDDWorkChain<T[]>>) {
+  readonly _chain: (metaonly?: boolean) => Promise<RDDWorkChain<T[]>>;
+  constructor(
+    context: DCFContext,
+    chain: (metaonly?: boolean) => Promise<RDDWorkChain<T[]>>
+  ) {
     this._context = context;
     this._chain = chain;
   }
 
   getNumPartitions(): Promise<number> {
-    return this._chain().then((v) => v.n);
+    return this._chain(true).then((v) => v.n);
   }
 
   protected execute<T, T1, Context>(
@@ -811,7 +814,7 @@ export class CachedRDD<T> extends RDD<T> {
 
   constructor(
     context: DCFContext,
-    chain: () => Promise<RDDWorkChain<T[]>>,
+    chain: (metaonly?: boolean) => Promise<RDDWorkChain<T[]>>,
     storageSession: Promise<StorageSession>
   ) {
     super(context, chain);

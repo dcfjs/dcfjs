@@ -1,4 +1,5 @@
 const chai = require('chai');
+const { expect } = chai;
 const chaiAsPromised = require('chai-as-promised');
 const { DCFContext } = require('@dcfjs/client');
 const { StorageClient } = require('@dcfjs/common');
@@ -18,11 +19,22 @@ describe('MapReduce With local worker', () => {
   });
 
   it('Test loaders', async () => {
-    console.log(
-      await dcc
-        .binaryFiles(path.resolve(__dirname, '../testdata'))
-        .map((v) => [v[0], v[1].length])
-        .collect()
-    );
+    expect(
+      (
+        await dcc
+          .binaryFiles(path.resolve(__dirname, '../testdata/'))
+          .map((v) => [v[0], v[1].length])
+          .collect()
+      ).map((v) => v[1])
+    ).deep.equals([378113, 422278]);
+
+    expect(
+      (
+        await dcc
+          .binaryFiles(path.resolve(__dirname, '../testdata/rfc2068.txt'))
+          .map((v) => [v[0], v[1].length])
+          .collect()
+      ).map((v) => v[1])
+    ).deep.equals([378113]);
   });
 });

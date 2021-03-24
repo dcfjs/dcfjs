@@ -1,3 +1,4 @@
+import { FsFileLoader } from './fs-file-loader';
 import * as grpc from '@grpc/grpc-js';
 import { MasterServiceClient } from '@dcfjs/proto/dcf/MasterService';
 import {
@@ -7,23 +8,26 @@ import {
   StorageClient,
 } from '@dcfjs/common';
 import * as dcfc from '@dcfjs/common';
-import { CachedRDD, RDD } from './rdd';
+import { RDD } from './rdd';
 import { PartitionFunc } from './chain';
 import * as v8 from 'v8';
-import { listFiles } from './fs-helper';
-import * as fs from 'fs';
+import { toUrl } from './fs-helper';
+import { FileLoader } from './file-loader';
+import { URL } from 'url';
 
 export interface DCFMapReduceOptions {
   client?: MasterServiceClient;
   masterEndpoint?: string;
   defaultPartitions?: number;
   storage?: StorageClient;
+  disableFSLoader?: boolean;
 }
 
 export class DCFContext {
   readonly client: MasterServiceClient;
   readonly options: DCFMapReduceOptions;
   readonly storage: StorageClient | null = null;
+  private _fileLoaders: FileLoader[] = [];
 
   constructor(options: DCFMapReduceOptions = {}) {
     this.options = options;
@@ -37,6 +41,9 @@ export class DCFContext {
         options.masterEndpoint || 'localhost:17731',
         grpc.credentials.createInsecure()
       );
+    }
+    if (!options.disableFSLoader) {
+      this.registerFileLoader(new FsFileLoader());
     }
   }
 
@@ -233,98 +240,28 @@ export class DCFContext {
     return new RDD<never>(this, () => chainPromise);
   }
 
+  registerFileLoader(loader: FileLoader) {
+    this._fileLoaders.push(loader);
+  }
+
   binaryFiles(
-    path: string,
-    {
-      recursive = false,
-      storage,
-    }: {
+    path: string | URL,
+    options: {
       recursive?: boolean;
       storage?: StorageClient;
     } = {}
   ): RDD<[string, Buffer]> {
-    if (!storage) {
-      if (!this.storage) {
-        throw new Error('No storage available.');
-      }
-      storage = this.storage;
+    const url = toUrl(path);
+    const loader = this._fileLoaders.find((v) => v.canHandleUrl(url));
+    if (!loader) {
+      throw new Error('No loader can handle url: `' + url + '`');
     }
-    const finalStorage = storage;
-    const chainFactory = async () => {
-      const session = await finalStorage.startSession();
-      const files = listFiles(path, recursive);
-
-      const keys = await Promise.all(
-        files.map(async (file, i) => {
-          const key = `${i}`;
-          const writable = session.createWriteStream(key);
-          const readable = fs.createReadStream(file);
-          readable.pipe(writable);
-          await new Promise((resolve, reject) => {
-            readable.on('error', reject);
-            writable.on('error', reject);
-            writable.on('finish', resolve);
-          });
-          return key;
-        })
-      );
-      session.release();
-
-      return {
-        n: files.length,
-        p: dcfc.captureEnv(
-          (partitionId) => {
-            const file = files[partitionId];
-            const key = keys[partitionId];
-            return dcfc.captureEnv(
-              async () => {
-                return [
-                  [file, await session.readFile(key)] as [string, Buffer],
-                ];
-              },
-              {
-                file,
-                key,
-                session,
-              }
-            );
-          },
-          {
-            files,
-            keys,
-            session,
-            dcfc: dcfc.requireModule('@dcfjs/common'),
-          }
-        ),
-        t: 'binaryFiles()',
-        d: [
-          {
-            n: 0,
-            p: () => () => [],
-            t: 'binaryFiles()',
-            d: [],
-            i: dcfc.captureEnv(
-              () => {
-                session.autoRenew();
-              },
-              {
-                session,
-              }
-            ),
-            f: () => {},
-            c: dcfc.captureEnv(
-              () => {
-                return session.close();
-              },
-              {
-                session,
-              }
-            ),
-          },
-        ],
+    if (!options.storage && this.storage) {
+      options = {
+        ...options,
+        storage: this.storage,
       };
-    };
-
-    return new RDD(this, chainFactory);
+    }
+    return new RDD(this, loader.getChainFactory(url, options));
   }
 }

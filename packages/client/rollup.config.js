@@ -20,6 +20,7 @@ export default {
     'v8',
     'fs',
     'path',
+    'url',
   ],
   plugins: [banner('@noCaptureEnv'), typescript()],
 };
