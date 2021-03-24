@@ -1,4 +1,4 @@
-import { RDDWorkChain } from './chain';
+import { RDDWorkChain, RDDFinalizedWorkChain } from './chain';
 import { StorageClient } from '@dcfjs/common';
 import { URL } from 'url';
 
@@ -7,11 +7,24 @@ import { URL } from 'url';
 export interface FileLoader {
   canHandleUrl(baseUri: URL): boolean;
 
-  getChainFactory(
-    baseUri: URL,
+  getReadFileChain(
+    baseUrl: URL,
     options: {
       recursive?: boolean;
       storage?: StorageClient;
     }
   ): () => Promise<RDDWorkChain<[string, Buffer][]>>;
+
+  getWriteFileChain(
+    baseUrl: URL,
+    baseChain: RDDWorkChain<[string, Buffer]>,
+    options: {
+      overwrite?: boolean;
+      storage?: StorageClient;
+    }
+  ):
+    | [RDDFinalizedWorkChain, (result: unknown) => void | Promise<void>]
+    | Promise<
+        [RDDFinalizedWorkChain, (result: unknown) => void | Promise<void>]
+      >;
 }

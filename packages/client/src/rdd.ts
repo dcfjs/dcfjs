@@ -10,6 +10,8 @@ import {
 } from './chain';
 import { StorageClient, StorageSession } from '@dcfjs/common';
 import * as XXHash from 'js-xxhash';
+import { toUrl } from './fs-helper';
+import { URL } from 'url';
 
 function hashPartitionFunc<V>(numPartitions: number) {
   const seed = ((Math.random() * 0xffffffff) | 0) >>> 0;
@@ -806,6 +808,62 @@ export class RDD<T> {
       }
       return ret;
     });
+  }
+
+  async saveAsTextFile(
+    this: RDD<string>,
+    path: string | URL,
+    {
+      overwrite = true,
+      encoding = 'utf8',
+      extension = 'txt',
+      storage,
+
+      compressor,
+    }: {
+      overwrite?: boolean;
+      encoding?: BufferEncoding;
+      extension?: string;
+      storage?: StorageClient;
+
+      compressor?: (data: Buffer) => Buffer | Promise<Buffer>;
+    } = {}
+  ): Promise<void> {
+    const url = toUrl(path);
+    const loader = this._context.getFileLoader(url);
+
+    const dataChain = await this._chain();
+    const baseChain = mapChain(
+      dataChain,
+      dcfc.captureEnv(
+        async (v, partitionId) => {
+          let content = Buffer.from(v.join('\n'), encoding);
+          if (compressor) {
+            content = await compressor(content);
+          }
+          return [`part-${partitionId}.${extension}`, content] as [
+            string,
+            Buffer
+          ];
+        },
+        {
+          extension,
+          encoding,
+          compressor,
+        }
+      )
+    );
+
+    const [finalChain, finalFunc] = await loader.getWriteFileChain(
+      url,
+      baseChain,
+      {
+        overwrite,
+        storage: storage || this._context.storage || undefined,
+      }
+    );
+    const chainResult = await this.execute(finalChain);
+    await finalFunc(chainResult);
   }
 }
 

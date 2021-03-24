@@ -244,6 +244,14 @@ export class DCFContext {
     this._fileLoaders.push(loader);
   }
 
+  getFileLoader(url: URL) {
+    const loader = this._fileLoaders.find((v) => v.canHandleUrl(url));
+    if (!loader) {
+      throw new Error('No loader can handle url: `' + url + '`');
+    }
+    return loader;
+  }
+
   binaryFiles(
     path: string | URL,
     options: {
@@ -252,17 +260,15 @@ export class DCFContext {
     } = {}
   ): RDD<[string, Buffer]> {
     const url = toUrl(path);
-    const loader = this._fileLoaders.find((v) => v.canHandleUrl(url));
-    if (!loader) {
-      throw new Error('No loader can handle url: `' + url + '`');
-    }
+    const loader = this.getFileLoader(url);
+
     if (!options.storage && this.storage) {
       options = {
         ...options,
         storage: this.storage,
       };
     }
-    return new RDD(this, loader.getChainFactory(url, options));
+    return new RDD(this, loader.getReadFileChain(url, options));
   }
 
   wholeTextFiles(

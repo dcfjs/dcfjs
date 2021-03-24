@@ -8,9 +8,9 @@ function walkSync(dirPath: URL, filelist: string[], recursive = false) {
     const fileUrl = new URL(file, dirPath);
 
     if (recursive) {
-      if (fs.statSync(dirPath + file).isDirectory()) {
-        const dirUrl = new URL(file + '/', dirPath);
-        walkSync(dirUrl, filelist, recursive);
+      if (fs.statSync(fileUrl).isDirectory()) {
+        fileUrl.href += '/';
+        walkSync(fileUrl, filelist, recursive);
       } else {
         filelist.push(fileUrl.toString());
       }
