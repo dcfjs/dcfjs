@@ -217,7 +217,9 @@ export class RDD<T> {
     );
   }
 
-  mapPartitions<T1>(transformer: (input: T[]) => T1[]): RDD<T1> {
+  mapPartitions<T1>(
+    transformer: (input: T[], partitionId: number) => T1[]
+  ): RDD<T1> {
     return new RDD<T1>(this._context, () =>
       this._chain().then((chain) => mapChain(chain, transformer))
     );
@@ -248,11 +250,14 @@ export class RDD<T> {
     );
   }
 
-  partitionBy(numPartitions: number, partitionFunc: (v: T) => number): RDD<T> {
+  partitionBy(
+    numPartitions: number,
+    partitionFunc: (v: T, partitionId: number, index: number) => number
+  ): RDD<T> {
     const storage = this._context.getStorage();
 
-    const newChainFactory = () =>
-      this._chain().then((chain) => {
+    const newChainFactory = (metaonly?: boolean) =>
+      this._chain(metaonly).then((chain) => {
         const dep = finalizeChainWithContext(
           chain,
           dcfc.captureEnv(
@@ -272,8 +277,9 @@ export class RDD<T> {
                   for (let i = 0; i < numPartitions; i++) {
                     regrouped[i] = [];
                   }
-                  for (const item of data) {
-                    const parId = partitionFunc(item);
+                  for (let i = 0; i < data.length; i++) {
+                    const item = data[i];
+                    const parId = partitionFunc(item, partitionId, i);
                     regrouped[parId].push(item);
                   }
 
@@ -365,7 +371,10 @@ export class RDD<T> {
       storage = this._context.storage;
     }
     const sessionPromise = storage.startSession();
-    const chainPromise = async () => {
+    const chainPromise = async (metaonly?: boolean) => {
+      if (metaonly) {
+        return this._chain(metaonly);
+      }
       const session = await sessionPromise;
       const chain = await this._chain();
       const keys = await this.execute(
@@ -433,8 +442,8 @@ export class RDD<T> {
   }
 
   coalesce(numPartitions: number) {
-    const newChainPromise = () =>
-      this._chain().then((chain) => {
+    const newChainPromise = (metaonly?: boolean) =>
+      this._chain(metaonly).then((chain) => {
         const originPartitions = chain.n;
 
         // [index: originPartitionId]: [newPartitionIdBase, [rate for each newPartition] ]
@@ -864,6 +873,199 @@ export class RDD<T> {
     );
     const chainResult = await this.execute(finalChain);
     await finalFunc(chainResult);
+  }
+
+  sort<K extends string | number>(
+    this: RDD<K>,
+    ascending: boolean = true,
+    numPartitions?: number
+  ) {
+    return this.sortBy((v) => v, ascending, numPartitions);
+  }
+
+  sortBy<K extends string | number>(
+    keyFunc: (data: T) => K,
+    ascending: boolean = true,
+    numPartitions: number = this._context.options.defaultPartitions!,
+    storage: StorageClient = this._context.storage!
+  ): RDD<T> {
+    if (!numPartitions || numPartitions < 0) {
+      throw new Error('Must specify partitions count.');
+    }
+    if (!storage) {
+      throw new Error('No storage available.');
+    }
+    const chainFactory = async (metaonly?: boolean) => {
+      const prevChain = await this._chain(metaonly);
+      if (metaonly) {
+        return {
+          n: numPartitions,
+          p: () => () => [],
+          t: `${prevChain.t}.sort()`,
+          d: [],
+        };
+      }
+      // step1: cache if needed
+      const cache = this instanceof CachedRDD ? this : this.persist(storage);
+      const isCache = this instanceof CachedRDD;
+
+      // Step 2:
+      // sample with 1/n fraction where n is origin partition count
+      // so we get a sample count near to a single partition.
+      // Sample contains partitionIndex & localIndex to avoid performance inssue
+      // when dealing with too many same values.
+      const originPartitions = prevChain.n;
+      const samples = await cache
+        .mapPartitions(
+          dcfc.captureEnv(
+            (arr, partitionId) =>
+              arr.map(
+                (v, i) => [keyFunc(v), partitionId, i] as [K, number, number]
+              ),
+            { keyFunc }
+          )
+        )
+        .filter(
+          dcfc.captureEnv((v) => Math.random() * originPartitions < 1, {
+            originPartitions,
+          })
+        )
+        .collect();
+
+      // Step 3: sort samples, and get seperate points.
+      samples.sort((a, b) => {
+        if (a !== b) {
+          return (a[0] < b[0] ? -1 : 1) * (ascending ? 1 : -1);
+        }
+        if (a[1] !== b[1]) {
+          return a[1] < b[1] ? -1 : 1;
+        }
+        return a[2] < b[2] ? -1 : 1;
+      });
+
+      // get n-1 points in samples.
+      const points: [K, number, number][] = [];
+      let p = samples.length / numPartitions;
+      for (let i = 1; i < numPartitions; i++) {
+        let idx = Math.floor(p * i);
+        if (idx < samples.length) {
+          points.push(samples[idx]);
+        }
+      }
+
+      // Step 4: Repartition by points.
+      const repartitioned = cache
+        .mapPartitions(
+          dcfc.captureEnv(
+            (data, partitionId) => {
+              const tmp = data.map(
+                (item, i) => [keyFunc(item), i] as [K, number]
+              );
+              tmp.sort((a, b) => {
+                if (a[0] !== b[0]) {
+                  return (a[0] < b[0] ? -1 : 1) * (ascending ? 1 : -1);
+                }
+                return a[1] < b[1] ? -1 : 1;
+              });
+              const ret: [T, K, number, number][][] = [];
+              for (let i = 0; i < numPartitions; i++) {
+                ret.push([]);
+              }
+              let index = 0;
+              for (const [key, i] of tmp) {
+                // compare with points
+                for (; index < points.length; ) {
+                  if (
+                    ascending ? key < points[index][0] : key > points[index][0]
+                  ) {
+                    break;
+                  }
+                  if (
+                    ascending ? key > points[index][0] : key < points[index][0]
+                  ) {
+                    index++;
+                    continue;
+                  }
+                  if (partitionId < points[index][1]) {
+                    break;
+                  }
+                  if (partitionId > points[index][1]) {
+                    index++;
+                    continue;
+                  }
+                  if (i < points[index][2]) {
+                    break;
+                  }
+                  index++;
+                }
+                ret[index].push([data[i], key, partitionId, i]);
+              }
+              return ret;
+            },
+            {
+              numPartitions,
+              points,
+              keyFunc,
+              ascending,
+            }
+          )
+        )
+        .partitionBy(numPartitions, (v, partitionId, index) => index);
+
+      // Step 5: Sort in partition.
+      // Maybe reverse (if ascending == false).
+      const sorted = repartitioned.mapPartitions(
+        dcfc.captureEnv(
+          (data) => {
+            const tmp = dcfc.concatArrays(data);
+            tmp.sort((a, b) => {
+              if (a[1] !== b[1]) {
+                return (a[1] < b[1] ? -1 : 1) * (ascending ? 1 : -1);
+              }
+              if (a[2] !== b[2]) {
+                return a[2] < b[2] ? -1 : 1;
+              }
+              return a[3] < b[3] ? -1 : 1;
+            });
+            return tmp.map((v) => v[0]);
+          },
+          {
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+            ascending,
+          }
+        )
+      );
+
+      const chain = await sorted._chain();
+
+      if (!isCache) {
+        // remove persisted data after sorted.
+        const session = await cache.storageSession;
+        session.release();
+        chain.d.push({
+          n: 0,
+          p: () => () => [],
+          t: 'cache()',
+          d: [],
+          i: dcfc.captureEnv(
+            () => {
+              return session.autoRenew();
+            },
+            { session }
+          ),
+          f: () => {},
+          c: dcfc.captureEnv(
+            () => {
+              return session.close();
+            },
+            { session }
+          ),
+        });
+      }
+
+      return chain;
+    };
+    return new RDD<T>(this._context, chainFactory);
   }
 }
 
