@@ -20,21 +20,7 @@ describe('MapReduce With local worker', () => {
 
   it('Test loaders', async () => {
     expect(
-      (
-        await dcc
-          .binaryFiles(path.resolve(__dirname, '../testdata/'))
-          .map((v) => [v[0], v[1].length])
-          .collect()
-      ).map((v) => v[1])
-    ).deep.equals([378113, 422278]);
-
-    expect(
-      (
-        await dcc
-          .binaryFiles(path.resolve(__dirname, '../testdata/rfc2068.txt'))
-          .map((v) => [v[0], v[1].length])
-          .collect()
-      ).map((v) => v[1])
-    ).deep.equals([378113]);
+      await dcc.textFile(path.resolve(__dirname, '../testdata/')).count()
+    ).to.be.equals(18934);
   });
 });

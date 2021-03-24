@@ -264,4 +264,70 @@ export class DCFContext {
     }
     return new RDD(this, loader.getChainFactory(url, options));
   }
+
+  wholeTextFiles(
+    baseUrl: string,
+    {
+      decompressor,
+      encoding = 'utf8',
+      recursive = false,
+    }: {
+      encoding?: BufferEncoding;
+      recursive?: boolean;
+
+      decompressor?: (data: Buffer, filename: string) => Buffer;
+    } = {}
+  ): RDD<[string, string]> {
+    if (typeof encoding === 'boolean') {
+      recursive = encoding;
+      encoding = 'utf-8';
+    }
+    return this.binaryFiles(baseUrl, { recursive }).mapPartitions(
+      dcfc.captureEnv(
+        (v) => {
+          let buf = v[0][1];
+          if (decompressor) {
+            buf = decompressor(buf, v[0][0]);
+          }
+          return [[v[0][0], buf.toString(encoding)] as [string, string]];
+        },
+        { encoding, decompressor }
+      )
+    );
+  }
+
+  textFile(
+    baseUrl: string,
+    options?: {
+      encoding?: BufferEncoding;
+      recursive?: boolean;
+
+      decompressor?: (data: Buffer, filename: string) => Buffer;
+
+      __dangerousDontCopy?: boolean;
+    }
+  ): RDD<string> {
+    const { __dangerousDontCopy: dontCopy = false } = options || {};
+
+    return this.wholeTextFiles(baseUrl, options).flatMap(
+      dcfc.captureEnv(
+        (v: any) => {
+          const ret = v[1].replace(/\\r/m, '').split('\n');
+          // Remove last empty line.
+          if (!ret[ret.length - 1]) {
+            ret.pop();
+          }
+          if (dontCopy) {
+            return ret;
+          }
+          // Fix memory leak: sliced string keep reference of huge string
+          // see https://bugs.chromium.org/p/v8/issues/detail?id=2869
+          return ret.map((v: any) => (' ' + v).substr(1));
+        },
+        {
+          dontCopy,
+        }
+      )
+    );
+  }
 }
