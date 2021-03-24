@@ -7,10 +7,11 @@ import {
   StorageClient,
 } from '@dcfjs/common';
 import * as dcfc from '@dcfjs/common';
-import { RDD } from './rdd';
-import { InitializeFunc, PartitionFunc } from './chain';
+import { CachedRDD, RDD } from './rdd';
+import { PartitionFunc } from './chain';
 import * as v8 from 'v8';
 import { listFiles } from './fs-helper';
+import * as fs from 'fs';
 
 export interface DCFMapReduceOptions {
   client?: MasterServiceClient;
@@ -86,7 +87,7 @@ export class DCFContext {
       index = end;
     }
 
-    return new RDD<T>(this, {
+    const chainPromise = Promise.resolve({
       n: numPartitions,
       p: dcfc.captureEnv(
         (partitionId) => {
@@ -103,6 +104,7 @@ export class DCFContext {
       t: 'parallelize()',
       d: [],
     });
+    return new RDD<T>(this, () => chainPromise);
   }
 
   range(to: number): RDD<number>;
@@ -131,7 +133,7 @@ export class DCFContext {
     const rest = finalCount % numPartitions;
     const eachCount = (finalCount - rest) / numPartitions;
 
-    return new RDD<number>(this, {
+    const chainPromise = Promise.resolve({
       n: numPartitions,
       p: dcfc.captureEnv(
         (partitionId) => {
@@ -171,10 +173,11 @@ export class DCFContext {
       t: `range(${from},${to})`,
       d: [],
     });
+    return new RDD<number>(this, () => chainPromise);
   }
 
   union<T>(...rdds: RDD<T>[]): RDD<T> {
-    const chainsPromise = Promise.all(rdds.map((v) => v._chain));
+    const chainsPromise = Promise.all(rdds.map((v) => v._chain()));
 
     const chainPromise = chainsPromise.then((chains) => {
       const partitionCounts: number[] = [];
@@ -217,26 +220,111 @@ export class DCFContext {
       };
     });
 
-    return new RDD<T>(this, chainPromise);
+    return new RDD<T>(this, () => chainPromise);
   }
 
   emptyRDD(): RDD<never> {
-    return new RDD<never>(this, {
+    const chainPromise = Promise.resolve({
       n: 0,
       p: () => () => [],
       t: 'emptyRDD()',
       d: [],
     });
+    return new RDD<never>(this, () => chainPromise);
   }
 
   binaryFiles(
     path: string,
     {
       recursive = false,
+      storage,
     }: {
       recursive?: boolean;
+      storage?: StorageClient;
     } = {}
   ): RDD<[string, Buffer]> {
-    throw new Error('TODO');
+    if (!storage) {
+      if (!this.storage) {
+        throw new Error('No storage available.');
+      }
+      storage = this.storage;
+    }
+    const finalStorage = storage;
+    const chainFactory = async () => {
+      const session = await finalStorage.startSession();
+      const files = listFiles(path, recursive);
+
+      const keys = await Promise.all(
+        files.map(async (file, i) => {
+          const key = `${i}`;
+          const writable = session.createWriteStream(key);
+          const readable = fs.createReadStream(file);
+          readable.pipe(writable);
+          await new Promise((resolve, reject) => {
+            readable.on('error', reject);
+            writable.on('error', reject);
+            writable.on('finish', resolve);
+          });
+          return key;
+        })
+      );
+      session.release();
+
+      return {
+        n: files.length,
+        p: dcfc.captureEnv(
+          (partitionId) => {
+            const file = files[partitionId];
+            const key = keys[partitionId];
+            return dcfc.captureEnv(
+              async () => {
+                return [
+                  [file, await session.readFile(key)] as [string, Buffer],
+                ];
+              },
+              {
+                file,
+                key,
+                session,
+              }
+            );
+          },
+          {
+            files,
+            keys,
+            session,
+            dcfc: dcfc.requireModule('@dcfjs/common'),
+          }
+        ),
+        t: 'binaryFiles()',
+        d: [
+          {
+            n: 0,
+            p: () => () => [],
+            t: 'binaryFiles()',
+            d: [],
+            i: dcfc.captureEnv(
+              () => {
+                session.autoRenew();
+              },
+              {
+                session,
+              }
+            ),
+            f: () => {},
+            c: dcfc.captureEnv(
+              () => {
+                return session.close();
+              },
+              {
+                session,
+              }
+            ),
+          },
+        ],
+      };
+    };
+
+    return new RDD(this, chainFactory);
   }
 }

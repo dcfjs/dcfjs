@@ -81,9 +81,7 @@ export class StorageSession {
     this.client = client;
     this.sessionId = sessionId;
     if (autoRenew) {
-      this.timer = setInterval(() => {
-        this.renew();
-      }, client.options.renewInterval);
+      this.autoRenew();
     }
   }
 
@@ -104,10 +102,7 @@ export class StorageSession {
   }
 
   async close() {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
+    this.release();
     if (this.currentRenew) {
       await this.currentRenew;
     }
@@ -121,6 +116,21 @@ export class StorageSession {
         }
       );
     });
+  }
+
+  autoRenew() {
+    if (!this.timer) {
+      this.timer = setInterval(() => {
+        this.renew();
+      }, this.client.options.renewInterval);
+    }
+  }
+
+  release() {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   }
 
   renew() {
