@@ -183,6 +183,9 @@ export class StorageSession {
       sessionId: this.sessionId,
       key,
     });
+    stream.on('error', (err) => {
+      transform.emit('error', err);
+    });
 
     transform.pipe((stream as unknown) as Writable, { end: false });
     return transform as Writable;
@@ -199,21 +202,23 @@ export class StorageSession {
         cb(null, data.data);
       },
     });
+    stream.on('error', () => {});
     return stream.pipe(transform);
   }
 
   readFile(key: string): Promise<Buffer>;
   readFile(key: string, encoding: BufferEncoding): Promise<string>;
   readFile(key: string, encoding?: BufferEncoding): Promise<Buffer | string> {
-    const stream = this.createReadableStream(key);
-    const datas: Buffer[] = [];
-    stream.on('readable', () => {
-      let buf;
-      while ((buf = stream.read())) {
-        datas.push(buf);
-      }
-    });
     return new Promise<Buffer | string>((resolve, reject) => {
+      const stream = this.createReadableStream(key);
+      const datas: Buffer[] = [];
+      stream.on('error', reject);
+      stream.on('readable', () => {
+        let buf;
+        while ((buf = stream.read())) {
+          datas.push(buf);
+        }
+      });
       stream.on('end', () => {
         const ret = Buffer.concat(datas);
         if (encoding) {
@@ -222,7 +227,6 @@ export class StorageSession {
         }
         resolve(ret);
       });
-      stream.on('error', reject);
     });
   }
 

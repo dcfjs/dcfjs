@@ -43,4 +43,12 @@ describe('Storage Test', () => {
 
     await session.close();
   });
+
+  it('Not found test', async () => {
+    const session = await client.startSession();
+
+    expect(session.readFile('not_exists')).to.be.rejectedWith();
+
+    await session.close();
+  });
 });
