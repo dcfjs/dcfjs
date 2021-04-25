@@ -1,6 +1,5 @@
 import * as fs from 'fs';
-import * as path from 'path';
-import { URL } from 'url';
+import { URL, pathToFileURL } from 'url';
 
 function walkSync(dirPath: URL, filelist: string[], recursive = false) {
   const files = fs.readdirSync(dirPath);
@@ -41,6 +40,5 @@ export function toUrl(pathOrUri: string | URL): URL {
   if (pathOrUri instanceof URL) {
     return pathOrUri;
   }
-  const base = new URL(path.join(path.resolve(), './'), 'file:///');
-  return new URL(pathOrUri, base);
+  return pathToFileURL(pathOrUri);
 }
